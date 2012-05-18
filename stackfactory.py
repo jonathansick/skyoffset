@@ -51,7 +51,7 @@ class ChipStacker(object):
                 "offsets": self.offsets}
         if dbMeta is not None:
             stackDoc.update(dbMeta)
-        self.collection.insert(stackDoc)
+        self.stackDB.insert(stackDoc)
 
     def calibrate_images(self, imagePaths, exptimes, skyLevels, zeropoints,
             stackZP, pixScale=None):

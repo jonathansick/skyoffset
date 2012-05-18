@@ -15,6 +15,10 @@ class StackDB(object):
         self.db = connection[self.dbname]
         self.collection = self.db[self.cname]
 
+    def insert(self, doc):
+        """docstring for insert"""
+        self.collection.insert(doc)
+
     def find_stacks(self, sel):
         """Does a MongoDB query for stacks, returning a dictionary (keyed) by
         stack name of the stack documents.
