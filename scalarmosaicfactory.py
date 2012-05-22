@@ -6,6 +6,7 @@ Make mosaics using scalar sky offsets
 2012-05-18 - Created by Jonathan Sick
 """
 import os
+import numpy as np
 
 from difftools import Couplings  # Scalar couplings
 from andpipe import footprintdb
@@ -99,6 +100,19 @@ class ScalarMosaicFactory(object):
         self.collection.update({"_id": mosaicName},
                 {"$set": {"couplings": couplingsDoc}})
         return couplings
+
+    def _simplex_disperison(self, couplings):
+        """Estimate the standard deviation (about zero offset) to initialize
+        the simplex dispersion around.
+
+        Return
+        ------
+        `initialSigma` and `restartSigma`.
+        """
+        diffList = [diff for k, diff in couplings.fieldDiffs.iteritems()]
+        diffList = np.array(diffList)
+        diffSigma = diffList.std()
+        return 2 * diffSigma, diffSigma
     
     def _solve_offsets(self, mosaicName, solverDBName, couplings,
             blockWCSs, mosaicWCS, freshStart=True, nRuns=1000):
@@ -109,6 +123,7 @@ class ScalarMosaicFactory(object):
 
         if freshStart:
             solver.resetdb()
+        initSigma, resetSigma = self._simplex_dispersion(couplings)
         solver.multi_start(couplings, nRuns, logPath, cython=True, mp=True)
 
         offsets = solver.find_best_offsets()
