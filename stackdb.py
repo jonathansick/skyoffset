@@ -3,7 +3,7 @@ import pymongo
 
 class StackDB(object):
     """Database interface for detector field stacks"""
-    def __init__(self, dbname="m31", cname="wircam_stacks", url="localhost",
+    def __init__(self, dbname="m31", cname="mosaic_stacks", url="localhost",
             port=27017):
         super(StackDB, self).__init__()
         self.dbname = dbname

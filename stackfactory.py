@@ -35,13 +35,18 @@ class ChipStacker(object):
 
     def pipeline(self, imageKeys, imagePaths, weightPaths, stackName,
             exptimes=None, skyLevels=None, zeropoints=None, stackZP=25.,
-            pixScale=None, dbMeta=None):
+            pixScale=None, dbMeta=None, debug=False):
         """Pipeline for running the ChipStacker method to produce stacks
         and addd them to the stack DB.
         """
+        cleanCal = False
         if (skyLevels is not None) or (zeropoints is not None):
             imagePaths = self.calibrate_images(imagePaths, exptimes,
-                    skyLevels, zeropoints, stackZP, pixScale=pixScale)
+                    skyLevels, zeropoints, stackZP, pixScale=pixScale,
+                    debug=debug)
+            cleanCal = True
+        imagePaths = dict(zip(imageKeys, imagePaths))
+        weightPaths = dict(zip(imageKeys, weightPaths))
         self.stack_images(imageKeys, imagePaths, weightPaths, stackName)
         self.remove_offset_frames()
         self.renormalize_weight()
@@ -52,9 +57,12 @@ class ChipStacker(object):
         if dbMeta is not None:
             stackDoc.update(dbMeta)
         self.stackDB.insert(stackDoc)
+        if cleanCal:
+            for imageKey, imagePath in imagePaths.iteritems():
+                os.remove(imagePath)
 
     def calibrate_images(self, imagePaths, exptimes, skyLevels, zeropoints,
-            stackZP, pixScale=None):
+            stackZP, pixScale=None, debug=False):
         """docstring for calibrate_images"""
         calDir = os.path.join(self.workDir, "cal")
         if not os.path.exists(calDir): os.makedirs(calDir)
@@ -73,8 +81,12 @@ class ChipStacker(object):
             calImagePaths.append(calPath)
             exptime = exptimes[i]
             args.append((path, calPath, exptime, level, zp, stackZP, pixScale))
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-        pool.map(_work_image_cal, args)
+        if not debug:
+            pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+            pool.map(_work_image_cal, args)
+            pool.terminate()
+        else:
+            map(_work_image_cal, args)
         return calImagePaths
 
     def stack_images(self, imageKeys, imagePaths, weightPaths, stackName):
@@ -149,7 +161,7 @@ class ChipStacker(object):
         fits[0].data = image
         fits.writeto(self.coaddWeightPath, clobber=True)
 
-    def _coadd_frames(self, combineType="AVERAGE"):
+    def _coadd_frames(self, combineType="WEIGHTED"):
         """Swarps images together as their arithmetic mean."""
         imagePathList = []
         weightPathList = []
@@ -168,7 +180,7 @@ class ChipStacker(object):
                 weightPaths=weightPathList,
                 configs=configs, workDir=self.workDir)
         swarp.run()
-        coaddPath, coaddWeightPath = swarp.getMosaicPaths()
+        coaddPath, coaddWeightPath = swarp.mosaic_paths()
         
         coaddHeader = pyfits.getheader(coaddPath, 0)
         coaddFrame = ResampledWCS(coaddHeader)
@@ -194,6 +206,7 @@ class ChipStacker(object):
         for result in results:
             frame, coaddKey, offsetData = result
             offsets[frame] = offsetData  # look at _computeDiff() for spec
+        pool.terminate()
         return offsets
     
     def _estimate_offsets(self, diffData):
@@ -234,6 +247,7 @@ class ChipStacker(object):
             for result in results:
                 imageKey, offsetImagePath = result
                 self.currentOffsetPaths[imageKey] = offsetImagePath
+            pool.terminate()
 
 
 def _work_image_cal(arg):
@@ -243,10 +257,13 @@ def _work_image_cal(arg):
     path, calPath, exptime, level, zp, stackZP, pixScale = arg
     fits = pyfits.open(path)
     if level is not None:
-        fits[0].image = fits[0].image - level
+        fits[0].data = fits[0].data - level
     if zp is not None:
         sf = 10. ** (0.4 * (stackZP - zp)) / exptime / (pixScale ** 2.)
-        fits[0].image = fits[0].image * sf
+        fits[0].data = fits[0].data * sf
+        gain = fits[0].header['GAIN']
+        gain = gain / sf
+        fits[0].header.update("GAIN", gain)
     fits.writeto(calPath, clobber=True)
 
 
