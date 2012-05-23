@@ -2,13 +2,12 @@ import os
 import pymongo
 
 from andpipe import footprintdb
-from difftools import Couplings # Scalar couplings
-from difftools import CoupledPlanes # Planar couplings
-from multisimplex import SimplexScalarOffsetSolver
+from difftools import CoupledPlanes  # Planar couplings
 from planarmultisimplex import PlanarMultiStartSimplex
 from planaraltmultisimplex import AltPlanarMultiStartSimplex
 import offsettools
-import blockmosaic # common mosaic construction functions
+import blockmosaic  # common mosaic construction functions
+
 
 class MosaicDB(object):
     """Database interface for a mosaic: a set of blocks."""
@@ -40,7 +39,7 @@ class MosaicDB(object):
 
     def insert(self, mosaicDoc):
         """docstring for insert"""
-        self.collection.insert(mosaicDoc)
+        self.collection.save(mosaicDoc)
 
 
 class PlanarMosaicFactory(MosaicDB):

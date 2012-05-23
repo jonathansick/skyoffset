@@ -14,6 +14,7 @@ from scalarobj import ScalarObjective
 import cyscalarobj
 import cysimplex
 
+
 class MultiStartSimplex(object):
     """Baseclass for multi-start recongerging simplex solvers."""
     def __init__(self, dbname, cname, url, port):
@@ -36,20 +37,22 @@ class MultiStartSimplex(object):
         self.collection = self.db[self.cname]
 
     def _prep_log_file(self):
-        self.startTime = time.clock() # for timing with close_log_file()
+        self.startTime = time.clock()  # for timing with close_log_file()
         logDir = os.path.dirname(self.logPath)
         if os.path.exists(logDir) is False: os.makedirs(logDir)
-        logging.basicConfig(filename=self.logPath,level=logging.INFO)
+        logging.basicConfig(filename=self.logPath, level=logging.INFO)
         logging.info("STARTING NEW SIMPLEX OPTIMIZATION ====================")
         hostname = platform.node()
         now = time.localtime(time.time())
         timeStamp = time.strftime("%y/%m/%d %H:%M:%S %Z", now)
-        logging.info("MultiStartSimplex started on %s at %s"%(hostname,timeStamp))
+        logging.info("MultiStartSimplex started on %s at %s"
+                % (hostname, timeStamp))
     
     def _close_log_file(self):
         endTime = time.clock()
         duration = (endTime - self.startTime) / 3600.
-        logging.info("ENDING SIMPLEX OPTIMIZATION. Duration: %.2f hours"%duration)
+        logging.info("ENDING SIMPLEX OPTIMIZATION. Duration: %.2f hours"
+                % duration)
 
 
 class SimplexScalarOffsetSolver(MultiStartSimplex):

@@ -17,7 +17,7 @@ class StackDB(object):
 
     def insert(self, doc):
         """docstring for insert"""
-        self.collection.insert(doc)
+        self.collection.save(doc)
 
     def find_stacks(self, sel):
         """Does a MongoDB query for stacks, returning a dictionary (keyed) by

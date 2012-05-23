@@ -22,19 +22,29 @@ class BlockDB(object):
 
     def insert(self, doc):
         """Insert a block"""
-        self.collection.insert(doc)
-        self._add_footprint(doc['image_path'], doc['field'], doc['FILTER'],
-                instrument=doc['instrument'])
+        self.collection.save(doc, safe=True)
+        if 'image_path' in doc:
+            self._add_footprint(doc['image_path'], doc['OBJECT'], doc['FILTER'],
+                    instrument=doc['instrument'])
 
     def update(self, blockName, key, value):
         """docstring for update"""
         self.collection.update({"_id": blockName}, {"$set": {key: value}})
+        if 'image_path' == key:
+            doc = self.collection.find_one({"_id": blockName})
+            print "update", doc
+            self._add_footprint(doc['image_path'], doc['OBJECT'], doc['FILTER'],
+                    instrument=doc['instrument'])
 
     def _add_footprint(self, path, fieldname, band, instrument):
         """Add this block to the FootprintDB"""
         header = pyfits.getheader(path)
         self.footprintDB.new_from_header(header, field=fieldname,
                 FILTER=band, kind='block', instrument=instrument)
+
+    def find_one(self, sel):
+        """docstring for find_one"""
+        return self.collection.find_one(sel)
     
     def find_blocks(self, sel):
         """Find blocks given a MongoDB selector.

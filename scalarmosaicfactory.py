@@ -101,7 +101,7 @@ class ScalarMosaicFactory(object):
                 {"$set": {"couplings": couplingsDoc}})
         return couplings
 
-    def _simplex_disperison(self, couplings):
+    def _simplex_dispersion(self, couplings):
         """Estimate the standard deviation (about zero offset) to initialize
         the simplex dispersion around.
 
@@ -124,7 +124,9 @@ class ScalarMosaicFactory(object):
         if freshStart:
             solver.resetdb()
         initSigma, resetSigma = self._simplex_dispersion(couplings)
-        solver.multi_start(couplings, nRuns, logPath, cython=True, mp=True)
+        solver.multi_start(couplings, nRuns, logPath, cython=True, mp=True,
+                initSigma=initSigma,
+                restartSigma=resetSigma)
 
         offsets = solver.find_best_offsets()
 

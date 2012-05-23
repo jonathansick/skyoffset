@@ -10,6 +10,7 @@ Build blocks from stacks
 import os
 import shutil
 import multiprocessing
+import numpy as np
 
 from moastro.astromatic import Swarp
 
@@ -27,8 +28,9 @@ class BlockFactory(object):
         self.workDir = workDir
         if not os.path.exists(workDir): os.makedirs(workDir)
 
-    def build(self, stackSelector, fieldname, band, solverCName,
-            freshStart=True, dbMeta=None, instrument="WIRCam"):
+    def build(self, stackSelector, blockname, solverCName,
+            freshStart=True, dbMeta={}, instrument="WIRCam",
+            solverDBName="skyoffsets"):
         """
         :param fieldname: the field of this block
         :param band: the FILTER of stacks
@@ -40,23 +42,23 @@ class BlockFactory(object):
             to be reset. Set to False to build upon results of previous
             solver runs.
         """
-        blockName = "%s_%s" % (fieldname, band)
-        stackDocs = self.stackDB.find_stacks({"OBJECT": fieldname,
-            "FILTER": band})
+        stackDocs = self.stackDB.find_stacks(stackSelector)
         # Make couplings
-        couplings = self._make_couplings(blockName, stackDocs)
+        couplings = self._make_couplings(blockname, stackDocs)
         # Add this block to the BlockDB collection
-        doc = {"_id": blockName, "field": fieldname, "FILTER": band,
-                "solver_cname": solverCName, 'instrument': instrument}
-        if dbMeta is not None:
-            doc.update(dbMeta)
+        doc = {"_id": blockname,
+               "solver_cname": solverCName,
+               "solver_dbname": solverDBName,
+               "instrument": instrument}
+        print "Inserting doc", doc
+        doc.update(dbMeta)
         self.blockDB.insert(doc)
         # Perform optimization
-        solver = self._solve_offsets(blockName, stackDocs, couplings,
-                solverCName, freshStart=freshStart)
+        solver = self._solve_offsets(blockname, stackDocs, couplings,
+                solverDBName, solverCName, freshStart=freshStart)
         offsets = solver.find_best_offsets()  # offset dictionary
         # Insert into BlockDB
-        self.blockDB.update(blockName, "offsets", offsets)
+        self.blockDB.update(blockname, "offsets", offsets)
 
     def _make_couplings(self, blockName, stackDocs):
         """Computes the couplings between stackDocs.
@@ -73,27 +75,46 @@ class BlockFactory(object):
         shutil.rmtree(diffImageDir)
         return couplings
     
-    def _solve_offsets(self, blockName, stackDocs, couplings, solverCName,
-            freshStart=True):
+    def _solve_offsets(self, blockName, stackDocs, couplings,
+            solverDBName, solverCName, freshStart=True):
         """Use SimplexScalarOffsetSolver to derive offsets for this block."""
         logPath = os.path.join(self.workDir, "%s.log" % blockName)
-        solver = SimplexScalarOffsetSolver(dbname=self.dbname,
-                cname=solverCName, url=self.url, port=self.port)
+        solver = SimplexScalarOffsetSolver(dbname=solverDBName,
+                cname=solverCName,
+                url=self.blockDB.url, port=self.blockDB.port)
         if freshStart:
             solver.resetdb()
-        solver.multi_start(couplings, 10000, logPath, mp=False, cython=True)
+        initSigma, resetSigma = self._simplex_dispersion(couplings)
+        solver.multi_start(couplings, 1000, logPath, mp=False, cython=True,
+                initSigma=initSigma,
+                restartSigma=resetSigma)
         return solver
+
+    def _simplex_dispersion(self, couplings):
+        """Estimate the standard deviation (about zero offset) to initialize
+        the simplex dispersion around.
+
+        Return
+        ------
+        `initialSigma` and `restartSigma`.
+        """
+        diffList = [diff for k, diff in couplings.fieldDiffs.iteritems()]
+        diffList = np.array(diffList)
+        diffSigma = diffList.std()
+        return 2 * diffSigma, diffSigma
     
-    def make_block_mosaic(self, stackDB, fieldname, band, workDir):
+    def make_block_mosaic(self, stackDB, stackSel, blockName, workDir):
         """The block mosaic can be made anytime once entries are added
         to the solver's collection."""
-        blockName = "%s_%s" % (fieldname, band)
         self.workDir = os.path.join(workDir, blockName)
-        blockDoc = self.collection.find_one({"_id": blockName})
+        blockDoc = self.blockDB.find_one({"_id": blockName})
+        print blockDoc
         solverCName = blockDoc['solver_cname']
-        stackDocs = stackDB.find_stacks({"OBJECT": fieldname, "FILTER": band})
-        solver = SimplexScalarOffsetSolver(dbname=self.dbname,
-                cname=solverCName, url=self.url, port=self.port)
+        solverDBName = blockDoc['solver_dbname']
+        stackDocs = stackDB.find_stacks(stackSel)
+        solver = SimplexScalarOffsetSolver(dbname=solverDBName,
+                cname=solverCName, url=self.blockDB.url,
+                port=self.blockDB.port)
         offsets = solver.find_best_offsets()
 
         self.offsetDir = os.path.join(self.workDir, "offset_images")
@@ -125,15 +146,15 @@ class BlockFactory(object):
         # same resampling system as all other blocks (hopefully)
         swarpConfigs = {"WEIGHT_TYPE": "MAP_WEIGHT",
                 "COMBINE_TYPE": "WEIGHTED",
-                "RESAMPLE": "N", "COMBINE": "Y"}
+                "RESAMPLE": "N",
+                "COMBINE": "Y"}
         swarp = Swarp(imagePathList, blockName,
                 weightPaths=weightPathList, configs=swarpConfigs,
                 workDir=self.workDir)
         swarp.run()
-        blockPath, weightPath = swarp.mosaic_path()
-        self.collection.update({"_id": blockName},
-                {"$set": {"image_path": blockPath,
-                          "weight_path": weightPath}})
+        blockPath, weightPath = swarp.mosaic_paths()
+        self.blockDB.update(blockName, "image_path", blockPath)
+        self.blockDB.update(blockName, "weight_path", weightPath)
 
         # Delete offset images
         shutil.rmtree(self.offsetDir)
