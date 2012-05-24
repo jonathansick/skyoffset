@@ -7,6 +7,7 @@ Make mosaics using scalar sky offsets
 """
 import os
 import numpy as np
+import subprocess
 
 from difftools import Couplings  # Scalar couplings
 from andpipe import footprintdb
@@ -23,7 +24,7 @@ class ScalarMosaicFactory(object):
         self.mosaicDB = mosaicDB
         self.footprintDB = footprintDB
         self.workDir = workDir
-        if not os.path.exists(): os.makedirs(os.workDir)
+        if not os.path.exists(workDir): os.makedirs(workDir)
     
     def build(self, blockSelector, mosaicName,
             solverDBName, solverCName,
@@ -192,3 +193,6 @@ class ScalarMosaicFactory(object):
                 pixelScale=pixelScale, fluxscale=fluxscale)
         self.blockDB.collection.update({"_id": mosaicName},
                 {"$set": {"subsampled_path": downsampledPath}})
+        tiffPath = os.path.join(self.workDir, mosaicName + ".tif")
+        subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
+                % (downsampledPath, tiffPath), shell=True)
