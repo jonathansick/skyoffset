@@ -25,7 +25,7 @@ class ScalarMosaicFactory(object):
         self.workDir = workDir
         if not os.path.exists(): os.makedirs(os.workDir)
     
-    def build(self, blockSelector, mosaicName, band, instrument,
+    def build(self, blockSelector, mosaicName,
             solverDBName, solverCName,
             nRuns=1000, dbMeta=None,
             resetCouplings=False, freshStart=True):
@@ -53,7 +53,7 @@ class ScalarMosaicFactory(object):
         # Precompute the output WCS; add to FootprintDB
         footprintSelector = {"mosaic_name": mosaicName,
             "FILTER": mosaicDoc['FILTER'],
-            "kind": "mosaic", 'instrument': "WIRCam"}
+            "kind": "mosaic"}
         self._precompute_mosaic_footprint(blockDocs, self.workDir,
                 footprintSelector)
 
@@ -64,7 +64,7 @@ class ScalarMosaicFactory(object):
         blockWCSs = {}
         for blockName, blockDoc in blockDocs.iteritems():
             print "the blockDoc:", blockDoc
-            field = blockDoc['field']
+            field = blockDoc['OBJECT']
             band = blockDoc['FILTER']
             sel = {"field": field, "FILTER": band}
             #blockName = "%s_%s" % (field, band) # Changed!
@@ -73,7 +73,7 @@ class ScalarMosaicFactory(object):
 
         self.collection.update({"_id": mosaicName},
                 {"$set": {"solver_cname": mosaicName,
-                          "solver_db": solverDBName}})
+                          "solver_dbname": solverDBName}})
 
         # Perform optimization
         self._solve_offsets(mosaicName, solverDBName, couplings,
@@ -133,7 +133,7 @@ class ScalarMosaicFactory(object):
         self.collection.update({"_id": mosaicName},
                 {"$set": {"offsets": offsets,
                     "solver_cname": mosaicName,
-                    "solver_db": solverDBName}})
+                    "solver_dbname": solverDBName}})
         return solver
     
     def _precompute_mosaic_footprint(self, blockDocs, workDir, metaData):
@@ -150,8 +150,8 @@ class ScalarMosaicFactory(object):
         footprintDB = footprintdb.FootprintDB()
         footprintDB.new_from_header(header, **metaData)
 
-    def make_mosaic(self, blockDB, mosaicName, band, workDir, fieldnames=None,
-            excludeFields=None):
+    def make_mosaic(self, mosaicName, blockSel, workDir,
+            fieldnames=None, excludeFields=None):
         """Swarp a mosaic using the optimal sky offsets.
         
         The mosaic can be made anytime once entries are added
@@ -160,16 +160,15 @@ class ScalarMosaicFactory(object):
         offsets from the collection of solver documents.
         """
         self.workDir = os.path.join(workDir, mosaicName)
-        mosaicDoc = self.collection.find_one({"_id": mosaicName})
+        mosaicDoc = self.mosaicDB.collection.find_one({"_id": mosaicName})
         solverCName = mosaicDoc['solver_cname']
-        solverDBName = mosaicDoc['solver_db']
+        solverDBName = mosaicDoc['solver_dbname']
 
-        blockSel = {"FILTER": band}
         if fieldnames is not None:
             blockSel["field"] = {"$in": fieldnames}
         if excludeFields is not None:
             blockSel["field"] = {"$nin": excludeFields}
-        blockDocs = blockDB.find_blocks(blockSel)
+        blockDocs = self.blockDB.find_blocks(blockSel)
         solver = SimplexScalarOffsetSolver(dbname=solverDBName,
                 cname=solverCName, url=self.url, port=self.port)
         offsets = solver.find_best_offsets()
@@ -185,11 +184,11 @@ class ScalarMosaicFactory(object):
 
     def subsample_mosaic(self, mosaicName, pixelScale=1., fluxscale=True):
         """Subsamples the existing mosaic to 1 arcsec/pixel."""
-        mosaicDoc = self.collection.find_one({"_id": mosaicName})
+        mosaicDoc = self.blockDB.collection.find_one({"_id": mosaicName})
         print "Mosaic Name:", mosaicName
         print "Mosaic Doc:", mosaicDoc
         fullMosaicPath = mosaicDoc['image_path']
         downsampledPath = blockmosaic.subsample_mosaic(fullMosaicPath,
                 pixelScale=pixelScale, fluxscale=fluxscale)
-        self.collection.update({"_id": mosaicName},
+        self.blockDB.collection.update({"_id": mosaicName},
                 {"$set": {"subsampled_path": downsampledPath}})
