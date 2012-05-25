@@ -72,7 +72,7 @@ class ScalarMosaicFactory(object):
             print blockName
             blockWCSs[blockName] = footprintDB.make_resampled_wcs(sel)
 
-        self.collection.update({"_id": mosaicName},
+        self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"solver_cname": mosaicName,
                           "solver_dbname": solverDBName}})
 
@@ -98,7 +98,7 @@ class ScalarMosaicFactory(object):
         couplings.make(diffImageDir)
         couplingsDoc = couplings.get_doc()
         print couplingsDoc
-        self.collection.update({"_id": mosaicName},
+        self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"couplings": couplingsDoc}})
         return couplings
 
@@ -120,7 +120,8 @@ class ScalarMosaicFactory(object):
         """Use SimplexScalarOffsetSolver to derive offsets for this block."""
         logPath = os.path.join(self.workDir, "%s.log" % mosaicName)
         solver = SimplexScalarOffsetSolver(dbname=solverDBName,
-                cname=mosaicName, url=self.url, port=self.port)
+                cname=mosaicName,
+                url=self.mosaicDB.url, port=self.mosaicDB.port)
 
         if freshStart:
             solver.resetdb()
@@ -131,7 +132,7 @@ class ScalarMosaicFactory(object):
 
         offsets = solver.find_best_offsets()
 
-        self.collection.update({"_id": mosaicName},
+        self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"offsets": offsets,
                     "solver_cname": mosaicName,
                     "solver_dbname": solverDBName}})
@@ -171,7 +172,8 @@ class ScalarMosaicFactory(object):
             blockSel["field"] = {"$nin": excludeFields}
         blockDocs = self.blockDB.find_blocks(blockSel)
         solver = SimplexScalarOffsetSolver(dbname=solverDBName,
-                cname=solverCName, url=self.url, port=self.port)
+                cname=solverCName,
+                url=self.mosaicDB.url, port=self.mosaicDB.port)
         offsets = solver.find_best_offsets()
         print "Using offsets", offsets
         
@@ -179,19 +181,19 @@ class ScalarMosaicFactory(object):
                 mosaicName, self.workDir,
                 offset_fcn=offsettools.apply_offset)
 
-        self.collection.update({"_id": mosaicName},
+        self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"image_path": blockPath,
                           "weight_path": weightPath}})
 
     def subsample_mosaic(self, mosaicName, pixelScale=1., fluxscale=True):
         """Subsamples the existing mosaic to 1 arcsec/pixel."""
-        mosaicDoc = self.blockDB.collection.find_one({"_id": mosaicName})
+        mosaicDoc = self.mosaicDB.collection.find_one({"_id": mosaicName})
         print "Mosaic Name:", mosaicName
         print "Mosaic Doc:", mosaicDoc
         fullMosaicPath = mosaicDoc['image_path']
         downsampledPath = blockmosaic.subsample_mosaic(fullMosaicPath,
                 pixelScale=pixelScale, fluxscale=fluxscale)
-        self.blockDB.collection.update({"_id": mosaicName},
+        self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"subsampled_path": downsampledPath}})
         tiffPath = os.path.join(self.workDir, mosaicName + ".tif")
         subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"

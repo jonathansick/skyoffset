@@ -10,6 +10,7 @@ Build blocks from stacks
 import os
 import shutil
 import multiprocessing
+import subprocess
 import numpy as np
 
 from moastro.astromatic import Swarp
@@ -21,14 +22,15 @@ import offsettools
 
 class BlockFactory(object):
     """Build froms from sets of stacks within a field."""
-    def __init__(self, blockDB, stackDB, workDir):
+    def __init__(self, blockname, blockDB, stackDB, workDir):
         super(BlockFactory, self).__init__()
         self.blockDB = blockDB
         self.stackDB = stackDB
         self.workDir = workDir
         if not os.path.exists(workDir): os.makedirs(workDir)
+        self.blockname = blockname
 
-    def build(self, stackSelector, blockname, solverCName,
+    def build(self, stackSelector, solverCName,
             freshStart=True, dbMeta={}, instrument="WIRCam",
             solverDBName="skyoffsets"):
         """
@@ -44,9 +46,9 @@ class BlockFactory(object):
         """
         stackDocs = self.stackDB.find_stacks(stackSelector)
         # Make couplings
-        couplings = self._make_couplings(blockname, stackDocs)
+        couplings = self._make_couplings(self.blockname, stackDocs)
         # Add this block to the BlockDB collection
-        doc = {"_id": blockname,
+        doc = {"_id": self.blockname,
                "solver_cname": solverCName,
                "solver_dbname": solverDBName,
                "instrument": instrument}
@@ -54,11 +56,11 @@ class BlockFactory(object):
         doc.update(dbMeta)
         self.blockDB.insert(doc)
         # Perform optimization
-        solver = self._solve_offsets(blockname, stackDocs, couplings,
+        solver = self._solve_offsets(self.blockname, stackDocs, couplings,
                 solverDBName, solverCName, freshStart=freshStart)
         offsets = solver.find_best_offsets()  # offset dictionary
         # Insert into BlockDB
-        self.blockDB.update(blockname, "offsets", offsets)
+        self.blockDB.update(self.blockname, "offsets", offsets)
 
     def _make_couplings(self, blockName, stackDocs):
         """Computes the couplings between stackDocs.
@@ -158,3 +160,11 @@ class BlockFactory(object):
 
         # Delete offset images
         shutil.rmtree(self.offsetDir)
+
+    def make_tiff(self, workDir):
+        """Render a tiff image of this block into workDir"""
+        blockDoc = self.blockDB.find_one({"_id": self.blockname})
+        downsampledPath = blockDoc['image_path']
+        tiffPath = os.path.join(self.workDir, self.blockname + ".tif")
+        subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
+                % (downsampledPath, tiffPath), shell=True)
