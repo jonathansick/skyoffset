@@ -91,6 +91,7 @@ class ScalarMosaicFactory(object):
         """
         couplings = Couplings()
         for blockName, blockDoc in blockDocs.iteritems():
+            print blockDoc
             blockPath = blockDoc['image_path']
             blockWeightPath = blockDoc['weight_path']
             couplings.add_field(blockName, blockPath, blockWeightPath)
