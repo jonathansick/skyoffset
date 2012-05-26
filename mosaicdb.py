@@ -41,6 +41,16 @@ class MosaicDB(object):
         """docstring for insert"""
         self.collection.save(mosaicDoc)
 
+    def find_one(self, sel):
+        """docstring for find_one"""
+        if type(sel) is not dict:
+            sel = {"_id": sel}
+        return self.collection.find_one(sel)
+
+    def update(self, sel, doc):
+        """docstring for update"""
+        self.collection.update(sel, doc)
+
 
 class PlanarMosaicFactory(MosaicDB):
     """Specialized version of MosaicDB for creating planar-offset Mosaics."""
