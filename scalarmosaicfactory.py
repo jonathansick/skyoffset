@@ -29,7 +29,8 @@ class ScalarMosaicFactory(object):
     def build(self, blockSelector, mosaicName,
             solverDBName, solverCName,
             nRuns=1000, dbMeta=None,
-            resetCouplings=False, freshStart=True):
+            resetCouplings=False, freshStart=True,
+            initScale=5., restartScale=2.):
         """Pipeline facade for building a scalar-sky-offset mosaic"""
         print "Making mosaic", mosaicName
         # Try to load a document with a previous run of this mosaic
@@ -78,7 +79,8 @@ class ScalarMosaicFactory(object):
 
         # Perform optimization
         self._solve_offsets(mosaicName, solverDBName, couplings,
-                blockWCSs, mosaicWCS, freshStart=freshStart, nRuns=nRuns)
+                blockWCSs, mosaicWCS, initScale, restartScale,
+                freshStart=freshStart, nRuns=nRuns)
 
     def _reload_couplings(self, couplingsDocument):
         """Attempt to create a CoupledPlanes instance from a MongoDB
@@ -103,7 +105,7 @@ class ScalarMosaicFactory(object):
                 {"$set": {"couplings": couplingsDoc}})
         return couplings
 
-    def _simplex_dispersion(self, couplings):
+    def _simplex_dispersion(self, initScale, restartScale, couplings):
         """Estimate the standard deviation (about zero offset) to initialize
         the simplex dispersion around.
 
@@ -114,10 +116,11 @@ class ScalarMosaicFactory(object):
         diffList = [diff for k, diff in couplings.fieldDiffs.iteritems()]
         diffList = np.array(diffList)
         diffSigma = diffList.std()
-        return 2 * diffSigma, diffSigma
+        return initScale * diffSigma, restartScale * diffSigma
     
     def _solve_offsets(self, mosaicName, solverDBName, couplings,
-            blockWCSs, mosaicWCS, freshStart=True, nRuns=1000):
+            blockWCSs, mosaicWCS, initScale, restartScale,
+            freshStart=True, nRuns=1000):
         """Use SimplexScalarOffsetSolver to derive offsets for this block."""
         logPath = os.path.join(self.workDir, "%s.log" % mosaicName)
         solver = SimplexScalarOffsetSolver(dbname=solverDBName,
@@ -126,7 +129,8 @@ class ScalarMosaicFactory(object):
 
         if freshStart:
             solver.resetdb()
-        initSigma, resetSigma = self._simplex_dispersion(couplings)
+        initSigma, resetSigma = self._simplex_dispersion(initScale,
+                restartScale, couplings)
         solver.multi_start(couplings, nRuns, logPath, cython=True, mp=True,
                 initSigma=initSigma,
                 restartSigma=resetSigma)
@@ -195,7 +199,7 @@ class ScalarMosaicFactory(object):
         downsampledPath = blockmosaic.subsample_mosaic(fullMosaicPath,
                 pixelScale=pixelScale, fluxscale=fluxscale)
         downsampledWeightPath = os.path.splitext(downsampledPath)[0] \
-                + "weight.fits"
+                + ".weight.fits"
         self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"subsampled_path": downsampledPath,
                           "subsampled_weight": downsampledWeightPath}})
