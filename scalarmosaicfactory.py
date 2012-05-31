@@ -194,8 +194,11 @@ class ScalarMosaicFactory(object):
         fullMosaicPath = mosaicDoc['image_path']
         downsampledPath = blockmosaic.subsample_mosaic(fullMosaicPath,
                 pixelScale=pixelScale, fluxscale=fluxscale)
+        downsampledWeightPath = os.path.splitext(downsampledPath)[0] \
+                + "weight.fits"
         self.mosaicDB.collection.update({"_id": mosaicName},
-                {"$set": {"subsampled_path": downsampledPath}})
+                {"$set": {"subsampled_path": downsampledPath,
+                          "subsampled_weight": downsampledWeightPath}})
         tiffPath = os.path.join(self.workDir, mosaicName + ".tif")
         subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
                 % (downsampledPath, tiffPath), shell=True)
