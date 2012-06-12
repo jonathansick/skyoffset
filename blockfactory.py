@@ -32,7 +32,7 @@ class BlockFactory(object):
 
     def build(self, stackSelector, solverCName,
             freshStart=True, dbMeta={}, instrument="WIRCam",
-            solverDBName="skyoffsets"):
+            solverDBName="skyoffsets", mp=False):
         """
         :param fieldname: the field of this block
         :param band: the FILTER of stacks
@@ -44,6 +44,7 @@ class BlockFactory(object):
             to be reset. Set to False to build upon results of previous
             solver runs.
         """
+        self.mp = mp  # Bool flag to use multiprocessing
         stackDocs = self.stackDB.find_stacks(stackSelector)
         # Make couplings
         couplings = self._make_couplings(self.blockname, stackDocs)
@@ -87,7 +88,7 @@ class BlockFactory(object):
         if freshStart:
             solver.resetdb()
         initSigma, resetSigma = self._simplex_dispersion(couplings)
-        solver.multi_start(couplings, 1000, logPath, mp=False, cython=True,
+        solver.multi_start(couplings, 1000, logPath, mp=self.mp, cython=True,
                 initSigma=initSigma,
                 restartSigma=resetSigma)
         return solver
