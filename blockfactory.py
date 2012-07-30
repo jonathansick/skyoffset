@@ -45,8 +45,10 @@ class BlockFactory(object):
             solver runs.
         """
         self.mp = mp  # Bool flag to use multiprocessing
+        print stackSelector
         stackDocs = self.stackDB.find_stacks(stackSelector)
-        print "Found %i stack docs" % stackDocs.count()
+        print stackDocs.keys()
+        print "Found %i stack docs" % len(stackDocs.keys())
         # Make couplings
         couplings = self._make_couplings(self.blockname, stackDocs)
         # Add this block to the BlockDB collection
