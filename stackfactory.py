@@ -284,7 +284,9 @@ def _computeDiff(arg):
     nPixels = len(goodPix[0])
     if nPixels > 10:
         diffPixels = upper.image[goodPix] - lower.image[goodPix]
-        diffPixelsMean = diffPixels.mean()
+        diffPixels = diffPixels[numpy.isfinite(diffPixels)]
+        # diffPixelsMean = diffPixels.mean()
+        diffPixelsMean = numpy.median(diffPixels)
         diffPixelsSigma = diffPixels.std()
         diffData = {"diffimage_mean": diffPixelsMean,
                     "diffimage_sigma": diffPixelsSigma,
