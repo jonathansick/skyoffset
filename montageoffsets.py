@@ -1,6 +1,5 @@
 import os
-import shutil
-import glob
+import subprocess
 
 import montage
 import pyfits
@@ -10,14 +9,6 @@ from owl.astromatic import Swarp
 
 import blockdb
 import mosaicdb
-
-ALLFIELDS = ["M31-%i" %i for i in  range(1,28) + range(32,44)]
-
-def main():
-    #work_montage("J", levelOnly=True)
-    work_montage("J", levelOnly=False)
-    #work_montage("Ks", levelOnly=True)
-    work_montage("Ks", levelOnly=False)
 
 
 def work_montage(rootName, blockSel, band, mosaicName, workDir,
@@ -109,9 +100,14 @@ def work_montage(rootName, blockSel, band, mosaicName, workDir,
         print montage.mAdd(correctedTblPath, hdrPath, mosaicPath,
                 img_dir=correctedDir, type="median")
     os.chdir(origDirectory)
+    
+    fullMosaicPath = os.path.join(workDir, mosaicPath)
+
+    tiffPath = os.path.join(workDir, mosaicName + ".tif")
+    subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
+            % (fullMosaicPath, tiffPath), shell=True)
 
     # Add to the mosaicdb
-    fullMosaicPath = os.path.join(workDir, mosaicPath)
     mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
     if mosaicDB.collection.find({"_id": mosaicName}).count() > 0:
         mosaicDB.collection.remove({"_id": mosaicName})
@@ -174,6 +170,3 @@ def scale_image(path):
     data[data == 0.] = np.nan
     fits[0].data = data
     fits.writeto(path, clobber=True)
-
-if __name__ == '__main__':
-    main()
