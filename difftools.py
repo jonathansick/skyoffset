@@ -387,12 +387,12 @@ class Couplings(object):
         """Adds a field object, which is any object that responds to the field specification..."""
         self.fields[name] = {'image_path': imagePath, 'weight_path': weightPath}
     
-    def make(self, diffDir):
+    def make(self, diffDir, plotDir=None):
         """Compute coupled image differences, using `diffDir` as a working 
         directory for the image differencing.
         """
         self._find_overlaps()
-        self._compute_overlap_diffs(diffDir)
+        self._compute_overlap_diffs(diffDir, plotDir=plotDir)
 
     def _find_overlaps(self):
         """Given the fields, detects and records all overlaps between fields."""
@@ -406,7 +406,7 @@ class Couplings(object):
         resampledWCS = ResampledWCS(pyfits.getheader(imagePath, 0))
         return resampledWCS
         
-    def _compute_overlap_diffs(self, diffImageDir):
+    def _compute_overlap_diffs(self, diffImageDir, plotDir=None):
         """Compute the scalar offsets between fields in each overlap.
         
         This is done with multiprocessing, so that overlaps are computed in parallel.
@@ -414,7 +414,11 @@ class Couplings(object):
         :param diffImageDir: can optionally be set to a directory name so
             that the computed difference images will be saved there.
         """
+        if plotDir is None:
+            plotDir = diffImageDir
+        print "Plot Dir is", plotDir
         if os.path.exists(diffImageDir) is False: os.makedirs(diffImageDir)
+        if os.path.exists(plotDir) is False: os.makedirs(plotDir)
         
         args = []
         for overlapKey, overlap in self.overlapDB.iteritems():
@@ -423,10 +427,11 @@ class Couplings(object):
             field1WeightPath = self.fields[field1]['weight_path']
             field2Path = self.fields[field2]['image_path']
             field2WeightPath = self.fields[field2]['weight_path']
-            arg = (field1, field1Path, field1WeightPath, field2, field2Path, field2WeightPath, overlap, diffImageDir)
+            arg = (field1, field1Path, field1WeightPath, field2, field2Path,
+                    field2WeightPath, overlap, diffImageDir, plotDir)
             args.append(arg)
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-        results = pool.map(_computeDiff, args) # TODO
+        results = pool.map(_computeDiff, args)
         #results = map(_computeDiff, args)
         diffs = {}
         diffSigmas = {}
@@ -447,6 +452,8 @@ class Couplings(object):
         self.fieldDiffSigmas = diffSigmas
         self.fieldDiffAreas = diffAreas
         self.fieldLevels = meanLevels
+        pool.close()
+        pool.join()
     
     def get_field_diffs(self, omittedFields=[], replicatedFields=[]):
         """Returns a dictionary of field differences, and a list of fields represented
@@ -510,20 +517,18 @@ class Couplings(object):
 
 def _computeDiff(arg):
     """Worker: Computes the DC offset of frame-coadd"""
-    upperKey, upperPath, upperWeightPath, lowerKey, lowerPath, lowerWeightPath, overlap, diffDir = arg
+    upperKey, upperPath, upperWeightPath, lowerKey, lowerPath, \
+            lowerWeightPath, overlap, diffDir, diffPlotDir = arg
     upper = SliceableImage.makeFromFITS(upperKey, upperPath, upperWeightPath)
     upper.setRange(overlap.upSlice)
     lower = SliceableImage.makeFromFITS(lowerKey, lowerPath, lowerWeightPath)
     lower.setRange(overlap.loSlice)
     # goodPix = numpy.where(upper.getGoodPix() & lower.getGoodPix())
-    goodPix = numpy.where((upper.weight>0.) & (lower.weight>0.))
+    goodPix = numpy.where((upper.weight > 0.) & (lower.weight > 0.))
     # badPix = numpy.where((upper.weight==0.) | (lower.weight==0.))
     nPixels = len(goodPix[0])
-    print upperKey,
-    print lowerKey,
-    print nPixels
     
-    nSigma = 1 # the sigma clipping limit above and below the orignal median.
+    nSigma = 1  # the sigma clipping limit above and below the orignal median.
     
     if nPixels > 10:
         # Offset via difference image
@@ -561,17 +566,20 @@ def _computeDiff(arg):
             # print "\tnum bad pix = %i" % len(badPix[0])
             badPix = numpy.where((upper.weight==0.) | (lower.weight==0.))
             diffImage[badPix] = numpy.nan
-            diffImage[diffImage<lowerLim] = numpy.nan
-            diffImage[diffImage>upperLim] = numpy.nan
+            diffImage[diffImage < lowerLim] = numpy.nan
+            diffImage[diffImage > upperLim] = numpy.nan
             path = os.path.join(diffDir, "%s_%s.fits"%(upperKey,lowerKey))
             pyfits.writeto(path, diffImage, clobber=True)
             
             # Plot a histogram of the difference pixels
-            plotPath = os.path.join(diffDir, "%s_%s"%(upperKey,lowerKey))
-            _diffHist(diffImage[goodPix].ravel(), diffPixelsMean, clippedMedian, sigma, upperKey, lowerKey, plotPath)
+            plotPath = os.path.join(diffPlotDir,
+                    "%s_%s" % (upperKey, lowerKey))
+            _diffHist(diffImage[goodPix].ravel(), diffPixelsMean,
+                    clippedMedian, sigma, upperKey, lowerKey, plotPath)
     else:
         offsetData = None
     return upperKey, lowerKey, offsetData
+
 
 class CoupledPlanes(object):
     """A replacement for the `Couplings` class in the context of slope analysis."""
@@ -907,6 +915,7 @@ def _gaussianObjective(fitParams, bins, counts):
     diff = numpy.sum((fittedCounts - counts)**2.)
     return diff
 
+
 def _diffHist(pixels, mean, clippedMedian, sigma, upperKey, lowerKey, plotPath):
     fig = Figure(figsize=(6,6))
     canvas = FigureCanvas(fig)
@@ -914,7 +923,9 @@ def _diffHist(pixels, mean, clippedMedian, sigma, upperKey, lowerKey, plotPath):
     ax = fig.add_subplot(111)
     nPixels = len(pixels)
     # Plot histogram
-    nCounts, bins, patches = ax.hist(pixels, bins=int(nPixels/1000), histtype='stepfilled', fc='0.5', log=True, normed=True)
+    nCounts, bins, patches = ax.hist(pixels,
+            bins=int(nPixels/1000), histtype='stepfilled', fc='0.5',
+            log=True, normed=True)
     # Plot estimates of the image difference
     ax.axvline(mean, ls="-", c='k', label="mean")
     ax.axvline(clippedMedian, ls='--', c='k', label="clipped median")
@@ -924,13 +935,15 @@ def _diffHist(pixels, mean, clippedMedian, sigma, upperKey, lowerKey, plotPath):
     # binCenters = _makeBinMiddles(bins)
     # ax.plot(binCenters, numpy.log10(max(nCounts)*unit_gauss(binCenters,fittedMean,fittedSigma)), '--g')
     # Plot the statistics of the offset
-    ax.text(0.05,0.95, r"Clipped $\Delta$: %.2e $\pm$ %.2e" % (clippedMedian, sigma),
+    ax.text(0.05, 0.95,
+        r"Clipped $\Delta= %.2e \pm %.2e$" % (clippedMedian, sigma),
         ha="left", va="top", transform=ax.transAxes)
     ax.set_xlabel("Image Difference (counts)")
     upperKey = upperKey.replace("_", "\_")
     lowerKey = lowerKey.replace("_", "\_")
     ax.set_title("%s - %s" % (upperKey, lowerKey))
     canvas.print_figure(plotPath)
+
 
 class CouplingGraph(object):
     """Allows for couplings to be treated as a directed graph, with trusted

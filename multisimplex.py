@@ -109,9 +109,15 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
             argsQueue.append(args)
 
         # Run the queue
+        pool = None
+
         if mp:
-            pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+            pool = multiprocessing.Pool(processes=multiprocessing.cpu_count(),
+                maxtasksperchild=None)
             pool.map(_simplexWorker, argsQueue)
+            pool.close()
+            pool.join()
+            pool.terminate()
         else:
             map(_simplexWorker, argsQueue)
 
@@ -140,6 +146,11 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
         for field, offset in bestOffsets.iteritems():
             bestOffsets[field] = offset - netOffset
         return bestOffsets
+
+
+def init_func():
+    print multiprocessing.current_process().name
+
 
 def _simplexWorker(argsList):
     """multiprocessing worker function for doing multi-trial simplex solving.
@@ -226,6 +237,7 @@ def _simplexWorker(argsList):
         connection = pymongo.Connection(dbArgs['url'], dbArgs['port'])
         db = connection[dbArgs['dbname']]
         collection = db[dbArgs['cname']]
-        collection.insert(convergenceHistory)
+        collection.insert(convergenceHistory, safe=True)
     except pymongo.errors.AutoReconnect:
         logging.info("pymongo.errors.AutoReconnect on %i"%n)
+    # collection.database.connection.disconnect()

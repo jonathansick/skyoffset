@@ -76,8 +76,8 @@ class BlockFactory(object):
             stackWeightPath = stackDoc['weight_path']
             couplings.add_field(stackName, stackPath, stackWeightPath)
         diffImageDir = os.path.join(self.workDir, "diffs")
-        couplings.make(diffImageDir)
-        # pairNames, diffs, diffSigmas, allFields = couplings.get_field_diffs()
+        diffPlotDir = os.path.join(self.workDir, "diff_plots")
+        couplings.make(diffImageDir, plotDir=diffPlotDir)
         shutil.rmtree(diffImageDir)
         return couplings
     
