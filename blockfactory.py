@@ -91,7 +91,7 @@ class BlockFactory(object):
         if freshStart:
             solver.resetdb()
         initSigma, resetSigma = self._simplex_dispersion(couplings)
-        solver.multi_start(couplings, 1000, logPath, mp=self.mp, cython=True,
+        solver.multi_start(couplings, 100, logPath, mp=self.mp, cython=True,
                 initSigma=initSigma,
                 restartSigma=resetSigma)
         return solver
@@ -107,7 +107,7 @@ class BlockFactory(object):
         diffList = [diff for k, diff in couplings.fieldDiffs.iteritems()]
         diffList = np.array(diffList)
         diffSigma = diffList.std()
-        return 2 * diffSigma, diffSigma
+        return 3 * diffSigma, 2 * diffSigma
     
     def make_block_mosaic(self, stackDB, stackSel, blockName, workDir):
         """The block mosaic can be made anytime once entries are added
