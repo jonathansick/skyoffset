@@ -88,10 +88,10 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
             self.objf = ScalarObjective(self.couplings) # object function instance
 
         ndim = self.objf.get_ndim()
-        xtol = 10.**(-4.) # fractional error in offsets acceptable for convergence
-        ftol = 10.**(-4.) # fractional error in objective function acceptable for convergence
-        maxiter = 1000 * ndim
-        maxEvals = 1000 * ndim
+        xtol = 10.**(-6.) # fractional error in offsets acceptable for convergence
+        ftol = 10.**(-5.) # fractional error in objective function acceptable for convergence
+        maxiter = 100000 * ndim
+        maxEvals = 100000 * ndim
         simplexArgs = {'xtol':xtol, 'ftol':ftol, 'maxiter':maxiter,
             'maxfun':maxEvals, 'full_output':True, 'disp':True,
             'retall':False, 'callback':None}
@@ -101,9 +101,9 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
         # Create initial simplexes
         argsQueue = []
         for n in xrange(nTrials):
-            sim = numpy.zeros([ndim+1, ndim], dtype=numpy.float64)
-            for i in xrange(ndim+1):
-                sim[i,:] = initSigma*numpy.random.standard_normal(ndim)
+            sim = numpy.zeros([ndim + 1, ndim], dtype=numpy.float64)
+            for i in xrange(ndim + 1):
+                sim[i, :] = initSigma * numpy.random.standard_normal(ndim)
             args = [sim, cython, self.couplings, simplexArgs, restartSigma,
                 xtol, n, nTrials, self.logPath, dbArgs]
             argsQueue.append(args)
@@ -130,7 +130,7 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
         """
         bestEnergy = 1e99 # running tally of best optimization result
         bestOffsets = {}
-        recs = self.collection.find({}, ['best_fopt','best_offsets'])
+        recs = self.collection.find({}, ['best_fopt', 'best_offsets'])
         for rec in recs:
             if rec['best_fopt'] < bestEnergy:
                 bestEnergy = rec['best_fopt']

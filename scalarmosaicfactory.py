@@ -34,14 +34,13 @@ class ScalarMosaicFactory(object):
         """Pipeline facade for building a scalar-sky-offset mosaic"""
         print "Making mosaic", mosaicName
         # Try to load a document with a previous run of this mosaic
-        mosaicDoc = self.mosaicDB.get_mosaic_doc({"_id": mosaicName})
+        mosaicDoc = self.mosaicDB.get_mosaic_doc(mosaicName)
         if mosaicDoc is None:
             mosaicDoc = {"_id": mosaicName}
             mosaicDoc.update(dbMeta)  # add meta data for this mosaic
             self.mosaicDB.insert(mosaicDoc)
         else:
-            print "Found mosaic doc"
-            print mosaicDoc
+            print "Found mosaicDoc fields", mosaicDoc.keys()
         
         blockDocs = self.blockDB.find_blocks(blockSelector)
         print "Working on blocks:", blockDocs.keys()
