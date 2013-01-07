@@ -527,6 +527,12 @@ def _computeDiff(arg):
     goodPix = numpy.where((upper.weight > 0.) & (lower.weight > 0.))
     # badPix = numpy.where((upper.weight==0.) | (lower.weight==0.))
     nPixels = len(goodPix[0])
+    print "Compute diff, nPixels:", nPixels
+    print upper.image.shape
+    print lower.image.shape
+    print upper.weight
+    print upper.image.min(), upper.image.max()
+    print lower.image.min(), lower.image.max(), lower.image.mean()
     
     nSigma = 1  # the sigma clipping limit above and below the orignal median.
     

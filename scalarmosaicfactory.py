@@ -7,6 +7,7 @@ Make mosaics using scalar sky offsets
 """
 import os
 import numpy as np
+import pyfits
 import subprocess
 
 from difftools import Couplings  # Scalar couplings
@@ -14,6 +15,7 @@ from andpipe import footprintdb
 from multisimplex import SimplexScalarOffsetSolver
 import blockmosaic  # common mosaic construction functions
 import offsettools
+from stackdb import StackDB
 
 
 class ScalarMosaicFactory(object):
@@ -189,6 +191,31 @@ class ScalarMosaicFactory(object):
                 {"$set": {"image_path": blockPath,
                           "weight_path": weightPath}})
 
+    def add_short_stacks(self, mosaicName, stacks):
+        """Paste a stack directly onto the mosaic (made with `make_mosaic`.
+        
+        Stacks is a list of (stack sel, (ra, dec)) tuples, where (ra, dec)
+        is the centre of the saturated region.
+        """
+        stackDB = StackDB()
+        stackPaths = []
+        for stackSel in stacks:
+            stackDoc = stackDB.collection.find_one(stackSel)
+            if stackDoc is None:
+                print "Couldn't find a stack!"
+                print stackSel
+                continue
+            stackPath = stackDoc['image_path']
+            stackWeightPath = stackDoc['weight_path']
+            stackPaths.append((stackPath, stackWeightPath))
+        print stackPaths
+        mosaicDoc = self.mosaicDB.collection.find_one({"_id": mosaicName})
+        mosaicPath = mosaicDoc['image_path']
+        mosaicWeightPath = mosaicDoc['weight_path']
+        diffImageDir = os.path.join(self.workDir, "short_stack_diffs")
+        paste_short_stack(mosaicPath, mosaicWeightPath, stackPaths,
+                diffImageDir)
+
     def subsample_mosaic(self, mosaicName, pixelScale=1., fluxscale=True):
         """Subsamples the existing mosaic to 1 arcsec/pixel."""
         mosaicDoc = self.mosaicDB.collection.find_one({"_id": mosaicName})
@@ -205,3 +232,45 @@ class ScalarMosaicFactory(object):
         tiffPath = os.path.join(self.workDir, mosaicName + ".tif")
         subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
                 % (downsampledPath, tiffPath), shell=True)
+
+
+def paste_short_stack(mosaicPath, mosaicWeightPath, stacks, workDir):
+    """Paste unsaturated pixels from stack into mosaic, adjusting for sky
+    offset difference.
+    """
+    from difftools import ResampledWCS, Overlap, _computeDiff, SliceableImage
+    mFITS = pyfits.open(mosaicPath)
+    mwFITS = pyfits.open(mosaicWeightPath)
+    mosaicFrame = ResampledWCS(mFITS[0].header)
+    print "Mosaic stats", mFITS[0].data.min(), mFITS[0].data.max()
+    for (stackPath, stackWeightPath) in stacks:
+        sFITS = pyfits.open(stackPath)
+        swFITS = pyfits.open(stackWeightPath)
+        stackFrame = ResampledWCS(sFITS[0].header)
+        overlap = Overlap(mosaicFrame, stackFrame)
+        # Compute difference between stack and mosaic
+        arg = ("mosaic", mosaicPath, mosaicWeightPath,
+                "stack", stackPath, stackWeightPath,
+                overlap, workDir, workDir)
+        field1, field2, offsetData = _computeDiff(arg)
+        meanDiff = offsetData['mean']
+        # Offset mosaic to right level
+        # meanDiff = mosaic - stack
+        sImage = sFITS[0].data + meanDiff
+        sWeight = swFITS[0].data
+        # Make slices in overlap
+        mosaicSL = SliceableImage('mosaic', mFITS[0].data, mwFITS[0].data)
+        stackSL = SliceableImage('stack', sImage, sWeight)
+        repPix = np.where((mosaicSL.weight <= 0.)
+                & (stackSL.weight >= 0.))
+        # Now apply the replacement to orginal mosaic image
+        r = mosaicSL.r  # slice array
+        mFITS[0].data[r[1][0]:r[1][1], r[0][0]:r[0][1]][repPix] = \
+                stackSL.image[repPix]
+        mwFITS[0].data[r[1][0]:r[1][1], r[0][0]:r[0][1]][repPix] = 1.
+        sFITS.close()
+        swFITS.close()
+    mFITS.writeto(mosaicPath, clobber=True)
+    mwFITS.writeto(mosaicWeightPath, clobber=True)
+    mFITS.close()
+    mwFITS.close()
