@@ -11,8 +11,8 @@ from matplotlib.ticker import NullFormatter
 import matplotlib as mpl
 import scipy.ndimage
 
-import owl.astromatic
 from owl.Footprint import equatorialToTan
+import moastro.astromatic
 
 import mosaicdb
 import difftools
@@ -22,42 +22,27 @@ import blockmosaic
 from blockdb import BlockDB
 
 # from scalar_hierarchy import mean_block_sky_intensity
-mean_block_sky_intensity = None  # FIXME
+from andpipe.wircam.skyanalysis.mean_sky_level import mean_level_dn
 from andpipe.wircam.calibset.mosaic.offsetratiomap import FieldLevelPlotter
 from andpipe.skysubpub.diffmaps import two_image_grid
 
 
 def test():
     # make_bootstrap("Ks")
-    make_bootstrap("J")
-    # make_sbdiff_mosaic("J")
-    # make_sbdiff_mosaic("Ks")
-    # mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
-    # rmsPlot = BootstrapRMSPlot(mosaicDB)
-    # rmsPlot.plot("skysubpub/bootstrap_sb_rms")
+    # make_bootstrap("J")
+    make_sbdiff_mosaic("J")
+    make_sbdiff_mosaic("Ks")
+    mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
+    rmsPlot = BootstrapRMSPlot(mosaicDB)
+    rmsPlot.plot("skysubpub/bootstrap_sb_rms")
 
     #plot_recovery_hists()
-    #recoveryPlotter = OffsetRecoveryHists()
-    #recoveryPlotter.plot("skysubpub/bootstrap_recovery_hist")
+    recoveryPlotter = OffsetRecoveryHists()
+    recoveryPlotter.plot("skysubpub/bootstrap_recovery_hist")
     
     # Map of the sigma in the expected - realized sky offsets for each block
-    #recoveryFieldmap = OffsetRecoveryFieldMap()
-    #recoveryFieldmap.plot("skysubpub/bootstrap_recovery_map")
-    
-    # !! Deprecated plots !!
-    #pairPlot = BootstrapPairPlot(mosaicDB, "scalar_J")
-    #pairPlot.plot("skyoffsets/scalar_mosaic/scalar_J/bootstrap_pair") #,
-    #        fields=["M31-1_J","M31-2_J","M31-3_J"])
-    #netPlot = NetworkUncertaintyPlot(mosaicDB, "scalar_J")
-    #netPlot.plot("skyoffsets/scalar_mosaic/scalar_J/bootstrap_net_uncert")
-    
-    #uncertHist = UncertaintyHistograms(mosaicDB, "scalar_J")
-    #uncertPlotDir = "skyoffsets/scalar_mosaic/scalar_J/uncert_hist"
-    #if os.path.join(uncertPlotDir) is False: os.makedirs(uncertPlotDir)
-    #for i in xrange(1,27):
-    #    fieldName = "M31-%i_J"%i
-    #    plotPath = os.path.join(uncertPlotDir, fieldName)
-    #    uncertHist.plot(fieldName, plotPath)
+    recoveryFieldmap = OffsetRecoveryFieldMap()
+    recoveryFieldmap.plot("skysubpub/bootstrap_recovery_map")
 
 
 def make_bootstrap(band, mosaicName="fw100k_scalar_medsky_0709"):
@@ -68,12 +53,16 @@ def make_bootstrap(band, mosaicName="fw100k_scalar_medsky_0709"):
             nTrials=100, startIndex=0)
 
 
-def make_sbdiff_mosaic(band):
+def make_sbdiff_mosaic(band, setName="fw100k_medsky",
+        mosaicRootName="fw100k_scalar_medsky_0709"):
     """docstring for make_sbdiff_mosaic"""
+    mosaicName = "%s_%s" % (mosaicRootName, band)
     mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
-    blockDB = BlockDB(dbname="skyoffsets", cname="wircam_blocks")
-    bmosaics = BootstrappedMosaics(mosaicDB, "scalar_%s" % band, blockDB,
-            "skyoffsets/scalar_mosaic/scalar_%s/bootstrapmosaics" % band,
+    blockDB = BlockDB()
+    bmosaics = BootstrappedMosaics(mosaicDB, mosaicName, band, setName,
+            blockDB,
+            "wircam/%s/mosaics/bootstrap/%s_%s" % (setName, mosaicRootName,
+                band),
             pixScale=10.)
     bmosaics.make_all()
     bmosaics.make_sb_diffs()
@@ -236,164 +225,19 @@ class ResampledCouplings(difftools.Couplings):
         self.fields = origCouplings.fields
 
 
-class BootstrapPairPlot(object):
-    """docstring for BootstrapPairPlot"""
-    def __init__(self, mosaicDB, mosaicName):
-        super(BootstrapPairPlot, self).__init__()
-        self.mosaicDB, mosaicName = mosaicDB, mosaicName
-        
-        # Store the bootstrap data document in self.b
-        doc = self.mosaicDB.get_mosaic_doc(mosaicName)
-        self.b = doc['bootstrap']
-    
-    def plot(self, plotPath, fields=None):
-        """Plots the pair plot to `plotPath`.
-        
-        :param fields: (optional) list of fields that should be included
-            in the pair plot. By default all fields are included.
-        """
-        if fields is None:
-            fields = self.b.keys()
-            fields = fields[0:15]
-        fields.sort()
-        nFields = len(fields)
-        
-        fig, axes = plt.subplots(nFields, nFields, sharex=False, sharey=False,
-                figsize=(8, 8))
-        fig.subplots_adjust(left=0.1, bottom=0.1, right=0.95, top=0.95,
-                wspace=0., hspace=0.)
-        lim = -1e10
-        for i, xField in enumerate(fields):
-            for j, yField in enumerate(fields):
-                nullfmt = NullFormatter()
-                if i != 0:
-                    axes[j, i].yaxis.set_major_formatter(nullfmt)
-                if j < nFields - 1:
-                    axes[j, i].xaxis.set_major_formatter(nullfmt)
-                if i >= j:
-                    axes[j, i].yaxis.set_major_formatter(nullfmt)
-                    axes[j, i].xaxis.set_major_formatter(nullfmt)
-                    axes[j, i].xaxis.set_visible(False)
-                    axes[j, i].yaxis.set_visible(False)
-                    axes[j, i].set_frame_on(False)
-                    continue
-                xDist = np.array(self.b[xField]['perturbation']) \
-                        + np.array(self.b[xField]['correction'])
-                yDist = np.array(self.b[yField]['perturbation']) \
-                        + np.array(self.b[yField]['correction'])
-                ext = np.absolute(yDist).max()
-                if ext > lim: lim = ext
-                axes[j, i].scatter(xDist, yDist,
-                        s=1., c='k', marker='o')
-        for i in xrange(nFields):
-            for j in xrange(nFields):
-                axes[j, i].set_xlim((-lim, lim))
-                axes[j, i].set_ylim((-lim, lim))
-        
-        for i, xField in enumerate(fields):
-            if i == nFields - 1: continue
-            fieldNum = xField.split("-")[-1].split("_")[0]
-            ax = axes[i + 1, i]
-            ax.text(0.5, 1.02, fieldNum, ha="center",
-                    va="baseline", transform=ax.transAxes)
-        for j, yField in enumerate(fields):
-            if j == 0: continue
-            fieldNum = yField.split("-")[-1].split("_")[0]
-            ax = axes[j, j - 1]
-            ax.text(1.02, 0.5, fieldNum, va="center",
-                    ha="left", transform=ax.transAxes)
-
-        fig.savefig(plotPath + ".pdf", bbox='tight')
-        fig.savefig(plotPath + ".eps", bbox='tight')
-
-
-class NetworkUncertaintyPlot(object):
-    """Plot the distribution of (Predicted-Observed) offset vs the
-    position of the image in the coupling network.
-    """
-    def __init__(self, mosaicDB, mosaicName):
-        super(NetworkUncertaintyPlot, self).__init__()
-        self.mosaicDB, mosaicName = mosaicDB, mosaicName
-        
-        # Store the bootstrap data document in self.b
-        doc = self.mosaicDB.get_mosaic_doc(mosaicName)
-        self.b = doc['bootstrap']
-        self.couplings = difftools.Couplings.load_doc(doc['couplings'])
-
-        self._reduce()
-
-    def _reduce(self):
-        """Compute the network and error distribution for each field."""
-        self.primeCouplingsCount = self._count_couplings()
-        self.offsetUncertainties = self._compute_uncertainties()
-
-    def _count_couplings(self):
-        """Count number of direct couplings to each field."""
-        count = {}
-        for field in self.couplings.fields:
-            count[field] = 0
-            for fieldPair, diff in self.couplings.fieldDiffs.iteritems():
-                if field in fieldPair:
-                    count[field] += 1
-        return count
-    
-    def _compute_uncertainties(self):
-        """docstring for fname"""
-        uncerts = {}
-        for field in self.b.keys():
-            samples = np.array(self.b[field]['correction']) \
-                        + np.array(self.b[field]['perturbation'])
-            uncerts[field] = samples.std()
-        return uncerts
-    
-    def plot(self, plotPath):
-        """docstring for plot"""
-        couplingsCount = []
-        uncerts = []
-        for field in self.b.keys():
-            couplingsCount.append(self.primeCouplingsCount[field])
-            uncerts.append(self.offsetUncertainties[field])
-        fig = plt.figure(num=None, figsize=(4, 4))
-        ax = fig.add_axes((0.15, 0.15, 0.8, 0.8))
-        ax.plot(couplingsCount, uncerts, 'ok')
-        ax.set_xlabel('Number of coupled fields')
-        ax.set_ylabel('Offset error')
-
-        fig.savefig(plotPath + ".pdf", bbox='tight')
-        fig.savefig(plotPath + ".eps", bbox='tight')
-
-
-class UncertaintyHistograms(object):
-    """Make histograms for uncertainties of offsets in individual fields."""
-    def __init__(self, mosaicDB, mosaicName):
-        super(UncertaintyHistograms, self).__init__()
-        self.mosaicDB, mosaicName = mosaicDB, mosaicName
-        doc = self.mosaicDB.get_mosaic_doc(mosaicName)
-        self.b = doc['bootstrap']
-    
-    def plot(self, fieldName, plotPath):
-        """Plot the distribution histogram for a given field, at the plotPath.
-        """
-        fig = plt.figure(num=None, figsize=(4, 4))
-        ax = fig.add_axes((0.15, 0.15, 0.8, 0.8))
-        uncert = np.array(self.b[fieldName]['correction']) \
-                - np.array(self.b[fieldName]['perturbation'])
-        ax.hist(uncert, 20, histtype='stepfilled')
-        ax.set_xlabel("Correction - Perturbation")
-        fig.savefig(plotPath + ".pdf", bbox='tight')
-        fig.savefig(plotPath + ".eps", bbox='tight')
-
-
 class OffsetRecoveryHists(object):
     """Plot histograms of the error in recovering expected offsets."""
-    def __init__(self):
+    def __init__(self, mosaicRootName="fw100k_scalar_medsky_0709",
+            setName="fw100k_medsky"):
         super(OffsetRecoveryHists, self).__init__()
+        self.setName = setName
+        self.mosaicRootName = mosaicRootName
         self.mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
     
     def plot(self, plotPath):
         """docstring for plot"""
-        scalarJRecovery = np.array(self._get_offset_recovery_dist("scalar_J"))
-        scalarKRecovery = np.array(self._get_offset_recovery_dist("scalar_Ks"))
+        scalarJRecovery = np.array(self._get_offset_recovery_dist("J"))
+        scalarKRecovery = np.array(self._get_offset_recovery_dist("Ks"))
         bins = np.arange(-0.5, 0.5, 0.01)
 
         fig = plt.figure(figsize=(3.5, 2.5))
@@ -410,16 +254,17 @@ class OffsetRecoveryHists(object):
         fig.savefig(plotPath + ".pdf", format="pdf")
         fig.savefig(plotPath + ".eps", format="eps")
 
-    def _get_offset_recovery_dist(self, mosaicName):
+    def _get_offset_recovery_dist(self, band):
         """return list of expected-true offsets, as a percent of sky level"""
+        mosaicName = "%s_%s" % (self.mosaicRootName, band)
         doc = self.mosaicDB.get_mosaic_doc(mosaicName)
         # use scalar_hierarchy module for code that gets the mean sky intensity
         # while observing a block
         allRelOffsets = []
         fieldnames = doc['bootstrap'].keys()
         for fieldname in fieldnames:
-            field, band = fieldname.split("_")
-            blockSky = mean_block_sky_intensity(field, band)
+            field, band = fieldname.split("_")[:2]
+            blockSky, blockSkySigma = mean_level_dn(self.setName, band)
             corrections = np.array(doc['bootstrap'][fieldname]['correction'])
             perturbations = np.array(
                 doc['bootstrap'][fieldname]['perturbation'])
@@ -431,17 +276,20 @@ class OffsetRecoveryHists(object):
 class OffsetRecoveryFieldMap(object):
     """Plot the standard deviation of expected vs realized offset at the
     locations of blocks"""
-    def __init__(self):
+    def __init__(self, mosaicRootName="fw100k_scalar_medsky_0709",
+            setName="fw100k_medsky"):
         super(OffsetRecoveryFieldMap, self).__init__()
+        self.mosaicRootName = mosaicRootName
+        self.setName = setName
         self.mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
 
     def plot(self, plotPath):
         fig, grid = two_image_grid()
 
-        self._plot_band("J", grid[0], grid.cbar_axes[0],
-                cticks=np.arange(0.05, 0.11, 0.01))
-        self._plot_band("Ks", grid[1], grid.cbar_axes[1],
-                cticks=np.arange(0.05, 0.12, 0.01))
+        self._plot_band("J", grid[0], grid.cbar_axes[0])
+                # cticks=np.arange(0.05, 0.11, 0.01))
+        self._plot_band("Ks", grid[1], grid.cbar_axes[1])
+                # cticks=np.arange(0.05, 0.12, 0.01))
 
         grid[0].set_ylabel(r"$\eta$ (degrees)")
         grid[0].set_xlabel(r"$\xi$ (degrees)")
@@ -473,29 +321,35 @@ class OffsetRecoveryFieldMap(object):
         """For each field, find the standard deviation of expected - obs.
         offsets. Pack the result in a field dictionary.
         """
-        mosaicName = "scalar_%s" % band
+        mosaicName = "%s_%s" % (self.mosaicRootName, band)
         doc = self.mosaicDB.get_mosaic_doc(mosaicName)
         fieldSigmas = {}
         fieldnames = doc['bootstrap'].keys()
         for fieldname in fieldnames:
-            field, band = fieldname.split("_")
-            blockSky = mean_block_sky_intensity(field, band)
+            print fieldname
+            field, band = fieldname.split("_")[:2]
+            # blockSky = mean_block_sky_intensity(field, band)
+            blockSky, blockSkySigma = mean_level_dn(self.setName, band)
             corrections = np.array(doc['bootstrap'][fieldname]['correction'])
             perturbations = np.array(
                 doc['bootstrap'][fieldname]['perturbation'])
             netRelOffsets = (corrections - perturbations) / blockSky * 100.
             fieldSigmas[field] = netRelOffsets.std()
+            print field, band, netRelOffsets.std()
         return fieldSigmas
 
 
 class BootstrappedMosaics(object):
     """Generate bootstrapped mosaics at 10 arcsec/pixel resolution."""
-    def __init__(self, mosaicDB, mosaicName, blockDB, workDir, pixScale=10.):
+    def __init__(self, mosaicDB, mosaicName, band, setName, blockDB, workDir,
+            pixScale=10.):
         super(BootstrappedMosaics, self).__init__()
         self.mosaicDB, self.mosaicName = mosaicDB, mosaicName
         self.blockDB = blockDB
         self.pixScale = pixScale
         self.workDir = workDir
+        self.band = band
+        self.setName = setName  # calibrated set
         
         # Store the bootstrap data document in self.b
         doc = self.mosaicDB.get_mosaic_doc(mosaicName)
@@ -531,7 +385,11 @@ class BootstrappedMosaics(object):
         if os.path.exists(resampDir) is False: os.makedirs(resampDir)
         fieldnames = self.b.keys()  # names of blocks
         print "Working with fields", fieldnames
-        blockDocs = self.blockDB.find_blocks({"_id": {"$in": fieldnames}})
+        # blockDocs = self.blockDB.find_blocks({"_id": {"$in": fieldnames}})
+        blockDocs = self.blockDB.find_blocks({"calibrated_set": self.setName,
+            "FILTER": self.band})
+        print "type(blockDocs)", type(blockDocs)
+        print "blockDocs.keys()", blockDocs.keys()
         imagePathList = [blockDocs[k]['image_path'] for k in fieldnames]
         weightPathList = [blockDocs[k]['weight_path'] for k in fieldnames]
         swarpConfigs = {"WEIGHT_TYPE": "MAP_WEIGHT",
@@ -540,7 +398,7 @@ class BootstrappedMosaics(object):
             "COMBINE_TYPE": "WEIGHTED",
             "RESAMPLE": "Y", "COMBINE": "N",
             "PIXEL_SCALE": "%.2f" % pixScale, "PIXELSCALE_TYPE": "MANUAL"}
-        swarp = owl.astromatic.Swarp(imagePathList, "resample",
+        swarp = moastro.astromatic.Swarp(imagePathList, "resample",
             weightPaths=weightPathList, configs=swarpConfigs,
             workDir=resampDir)
         swarp.run()
@@ -649,11 +507,11 @@ class BootstrappedMosaics(object):
             "COMBINE_TYPE": "CHI2",
             "RESAMPLE": "N", "COMBINE": "Y",
             "PIXEL_SCALE": "%.2f" % self.pixScale, "PIXELSCALE_TYPE": "MANUAL"}
-        swarp = owl.astromatic.Swarp(imagePathList, "sb_rms",
+        swarp = moastro.astromatic.Swarp(imagePathList, "sb_rms",
             weightPaths=weightPathList, configs=swarpConfigs,
             workDir=self.workDir)
         swarp.run()
-        mosaicPath, weightPath = swarp.getMosaicPaths()
+        mosaicPath, weightPath = swarp.get_mosaic_paths()
         self.mosaicDB.collection.update({"_id": self.mosaicName},
                     {"$set": {"bootstrap_sbrms": mosaicPath,
                     "bootstrap_sbrms_weight": weightPath}})
@@ -661,8 +519,9 @@ class BootstrappedMosaics(object):
 
 class BootstrapRMSPlot(object):
     """Plot the RMS maps of surface brightness seen in the boostraps"""
-    def __init__(self, mosaicDB):
+    def __init__(self, mosaicDB, mosaicRootName="fw100k_scalar_medsky_0709"):
         super(BootstrapRMSPlot, self).__init__()
+        self.mosaicRootName = mosaicRootName
         self.mosaicDB = mosaicDB
     
     def plot(self, plotPath):
@@ -686,7 +545,8 @@ class BootstrapRMSPlot(object):
         fig.savefig(plotPath + ".pdf", format="pdf")
 
     def _plot_band(self, ax, cbar, band, clim=(0., 1.), cticks=None):
-        doc = self.mosaicDB.get_mosaic_doc("scalar_%s" % band)
+        mosaicName = "%s_%s" % (self.mosaicRootName, band)
+        doc = self.mosaicDB.get_mosaic_doc(mosaicName)
         rmsPath = doc['bootstrap_sbrms']
         fits = pyfits.open(rmsPath)
         image = fits[0].data
