@@ -511,7 +511,7 @@ class BootstrappedMosaics(object):
             weightPaths=weightPathList, configs=swarpConfigs,
             workDir=self.workDir)
         swarp.run()
-        mosaicPath, weightPath = swarp.get_mosaic_paths()
+        mosaicPath, weightPath = swarp.mosaic_paths()
         self.mosaicDB.collection.update({"_id": self.mosaicName},
                     {"$set": {"bootstrap_sbrms": mosaicPath,
                     "bootstrap_sbrms_weight": weightPath}})
