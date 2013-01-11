@@ -30,8 +30,8 @@ from andpipe.skysubpub.diffmaps import two_image_grid
 def test():
     # make_bootstrap("Ks")
     # make_bootstrap("J")
-    make_sbdiff_mosaic("J")
-    make_sbdiff_mosaic("Ks")
+    # make_sbdiff_mosaic("J")
+    # make_sbdiff_mosaic("Ks")
     mosaicDB = mosaicdb.MosaicDB(dbname="m31", cname="mosaics")
     rmsPlot = BootstrapRMSPlot(mosaicDB)
     rmsPlot.plot("skysubpub/bootstrap_sb_rms")
@@ -543,6 +543,7 @@ class BootstrapRMSPlot(object):
                 transform=grid[1].transAxes)
 
         fig.savefig(plotPath + ".pdf", format="pdf")
+        fig.savefig(plotPath + ".eps", format="eps")
 
     def _plot_band(self, ax, cbar, band, clim=(0., 1.), cticks=None):
         mosaicName = "%s_%s" % (self.mosaicRootName, band)
@@ -562,7 +563,7 @@ class BootstrapRMSPlot(object):
                 colors='w', antialiased=True)
         cb = plt.colorbar(im, cax=cbar, ax=ax, orientation='horizontal')
         cbar.axis['top'].toggle(ticklabels=True, label=True)
-        cbar.axis['top'].set_label(r"Bootstrap RMS (mag $\Box^{-2}$)")
+        cbar.axis['top'].set_label(r"RMS (mag $\Box^{-2}$)")
         if cticks is not None:
             cb.set_ticks(cticks)
         ax.set_xlabel(r"$\xi$ (degrees)")
