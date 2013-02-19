@@ -25,8 +25,10 @@ class MontagePipeline(object):
         self.origDirectory = os.getcwd()
         if levelOnly:
             self.skyType = "scalar"
+            self.levelOnly = True
         else:
             self.skyType = "planar"
+            self.levelOnly = False
         # workDir = "skyoffsets/montage/%s_%s" % (band,skyType)
         self.projDir = "proj"
         self.diffDir = "diff"
