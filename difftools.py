@@ -10,8 +10,9 @@ import multiprocessing
 
 from scipy.stats import nanmean
 
-from matplotlib.backends.backend_pdf import FigureCanvasPdf as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
 
 class SliceableBase(object):
     """Baseclass for dealing with image slices."""
@@ -48,7 +49,7 @@ class SliceableImage(SliceableBase):
     def makeFromFITS(cls, key, imagePath, weightPath):
         """Create a `SliceableImage` from FITS paths"""
         if weightPath is not None:
-            return cls(key, astropy.io.fits.getdata(imagePath, 0), pyfits.getdata(weightPath, 0))
+            return cls(key, astropy.io.fits.getdata(imagePath, 0), astropy.io.fits.getdata(weightPath, 0))
         else:
             return cls(key, astropy.io.fits.getdata(imagePath, 0), None)
     
