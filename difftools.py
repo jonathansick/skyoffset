@@ -3,7 +3,7 @@ import os
 import cPickle
 import numpy
 import scipy.stats
-import pyfits
+import astropy.io.fits
 import Polygon
 import Polygon.Utils
 import multiprocessing
@@ -27,9 +27,9 @@ class SliceableBase(object):
         dirname = os.path.dirname(pathRoot)
         if os.path.exists(dirname) is False:
             os.makedirs(dirname)
-        pyfits.writeto(pathRoot+"_im.fits", self.image, clobber=True)
+        astropy.io.fits.writeto(pathRoot+"_im.fits", self.image, clobber=True)
         if self.weight is not None:
-            pyfits.writeto(pathRoot+"_wht.fits", self.weight, clobber=True)
+            astropy.io.fits.writeto(pathRoot+"_wht.fits", self.weight, clobber=True)
 
 class SliceableImage(SliceableBase):
     """Used by _computeDiff to efficiently slice overlapping images and compare
@@ -48,9 +48,9 @@ class SliceableImage(SliceableBase):
     def makeFromFITS(cls, key, imagePath, weightPath):
         """Create a `SliceableImage` from FITS paths"""
         if weightPath is not None:
-            return cls(key, pyfits.getdata(imagePath, 0), pyfits.getdata(weightPath, 0))
+            return cls(key, astropy.io.fits.getdata(imagePath, 0), pyfits.getdata(weightPath, 0))
         else:
-            return cls(key, pyfits.getdata(imagePath, 0), None)
+            return cls(key, astropy.io.fits.getdata(imagePath, 0), None)
     
     def _slice(self, im):
         return im[self.r[1][0]:self.r[1][1], self.r[0][0]:self.r[0][1]]
@@ -73,8 +73,8 @@ class SliceableFITS(SliceableBase):
         self.key = key
         self.imagePath = imagePath
         self.weightPath = weightPath
-        self.imageFITS = pyfits.open(self.imagePath)
-        self.weightFITS = pyfits.open(self.weightPath)
+        self.imageFITS = astropy.io.fits.open(self.imagePath)
+        self.weightFITS = astropy.io.fits.open(self.weightPath)
         self.image = None
         self.weight = None
         self.r = None
@@ -403,7 +403,7 @@ class Couplings(object):
 
     def _make_imageframe(self, imagePath):
         """:return: the ResampledWCS corresponding to image (assumed in ext 0)."""
-        resampledWCS = ResampledWCS(pyfits.getheader(imagePath, 0))
+        resampledWCS = ResampledWCS(astropy.io.fits.getheader(imagePath, 0))
         return resampledWCS
         
     def _compute_overlap_diffs(self, diffImageDir, plotDir=None):
@@ -575,7 +575,7 @@ def _computeDiff(arg):
             diffImage[diffImage < lowerLim] = numpy.nan
             diffImage[diffImage > upperLim] = numpy.nan
             path = os.path.join(diffDir, "%s_%s.fits"%(upperKey,lowerKey))
-            pyfits.writeto(path, diffImage, clobber=True)
+            astropy.io.fits.writeto(path, diffImage, clobber=True)
             
             # Plot a histogram of the difference pixels
             plotPath = os.path.join(diffPlotDir,
@@ -703,7 +703,7 @@ class CoupledPlanes(object):
 
     def _make_imageframe(self, imagePath):
         """:return: the ResampledWCS corresponding to image (assumed in ext 0)."""
-        resampledWCS = ResampledWCS(pyfits.getheader(imagePath, 0))
+        resampledWCS = ResampledWCS(astropy.io.fits.getheader(imagePath, 0))
         return resampledWCS
     
     def get_overlap_db(self):
@@ -846,7 +846,7 @@ def _computeDiffPlane(arg):
         # Save the difference image
         outputImage = numpy.nan * numpy.zeros(diffImage.shape)
         outputImage[newGoodPix] = diffImage[newGoodPix]
-        pyfits.writeto(os.path.join(diffDir, "%s_%s.fits"%(upperKey,lowerKey)),
+        astropy.io.fits.writeto(os.path.join(diffDir, "%s_%s.fits"%(upperKey,lowerKey)),
             outputImage, clobber=True)
     else:
         offsetData = None
