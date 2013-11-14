@@ -7,7 +7,7 @@ Make mosaics using scalar sky offsets
 """
 import os
 import numpy as np
-import pyfits
+import astropy.io.fits
 import subprocess
 
 from difftools import Couplings  # Scalar couplings
@@ -239,13 +239,13 @@ def paste_short_stack(mosaicPath, mosaicWeightPath, stacks, workDir):
     offset difference.
     """
     from difftools import ResampledWCS, Overlap, _computeDiff, SliceableImage
-    mFITS = pyfits.open(mosaicPath)
-    mwFITS = pyfits.open(mosaicWeightPath)
+    mFITS = astropy.io.fits.open(mosaicPath)
+    mwFITS = astropy.io.fits.open(mosaicWeightPath)
     mosaicFrame = ResampledWCS(mFITS[0].header)
     print "Mosaic stats", mFITS[0].data.min(), mFITS[0].data.max()
     for (stackPath, stackWeightPath) in stacks:
-        sFITS = pyfits.open(stackPath)
-        swFITS = pyfits.open(stackWeightPath)
+        sFITS = astropy.io.fits.open(stackPath)
+        swFITS = astropy.io.fits.open(stackWeightPath)
         stackFrame = ResampledWCS(sFITS[0].header)
         overlap = Overlap(mosaicFrame, stackFrame)
         # Compute difference between stack and mosaic

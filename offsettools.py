@@ -1,20 +1,22 @@
 import numpy
-import pyfits
+import astropy.io.fits
+
 
 def apply_offset(arg):
     """Worker: Subtracts the DC offset from a frame, and save the new image
     to the given output path.
     """
     frame, imagePath, offset, outputPath = arg
-    fits = pyfits.open(imagePath)
+    fits = astropy.io.fits.open(imagePath)
     image = fits[0].data
     goodPix = numpy.where(image != 0.)
     # image[image != 0.] = image[image != 0.] - offset
     print frame,
     print offset
-    image[goodPix] = image[goodPix] - offset # CHANGED
+    image[goodPix] = image[goodPix] - offset  # CHANGED
     fits.writeto(outputPath, clobber=True)
     return frame, outputPath
+
 
 def apply_planar_offset(arg):
     """Subtracts the planar offset from a frame, and saves the new image
@@ -22,7 +24,7 @@ def apply_planar_offset(arg):
     """
     frame, imagePath, offset, outputPath = arg
 
-    fits = pyfits.open(imagePath)
+    fits = astropy.io.fits.open(imagePath)
     image = fits[0].data
     zeroPix = numpy.where(image == 0.)
     
@@ -37,11 +39,12 @@ def apply_planar_offset(arg):
     # print offsetPath
     fits.writeto(outputPath, clobber=True)
 
+
 def make_plane_image(shape, plane):
     """Given the tuple shape (ysize,xsize), """
     ysize, xsize = shape
-    y0 = int(ysize/2.)
-    x0 = int(xsize/2.)
+    y0 = int(ysize / 2.)
+    x0 = int(xsize / 2.)
     
     xCoords = []
     yCoords = []
@@ -50,8 +53,7 @@ def make_plane_image(shape, plane):
     for i in xrange(xsize):
         x = i - x0
         for j in xrange(ysize):
-            #y = -(j - y0)
-            y = j - y0 # CHANGED
+            y = j - y0
             xCoords.append(x)
             yCoords.append(y)
             xIndices.append(i)
@@ -63,6 +65,5 @@ def make_plane_image(shape, plane):
     
     mx, my, c = plane
     offsetImage = numpy.zeros(shape)
-    offsetImage[yIndices, xIndices] = mx*xCoords + my*yCoords + c
+    offsetImage[yIndices, xIndices] = mx * xCoords + my * yCoords + c
     return offsetImage
-
