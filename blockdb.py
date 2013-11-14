@@ -1,5 +1,5 @@
 import pymongo
-import pyfits
+import astropy.io.fits
 
 from andpipe.footprintdb import FootprintDB
 
@@ -38,7 +38,7 @@ class BlockDB(object):
 
     def _add_footprint(self, path, fieldname, band, instrument):
         """Add this block to the FootprintDB"""
-        header = pyfits.getheader(path)
+        header = astropy.io.fits.getheader(path)
         self.footprintDB.new_from_header(header, field=fieldname,
                 FILTER=band, kind='block', instrument=instrument)
 
