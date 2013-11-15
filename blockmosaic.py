@@ -89,7 +89,7 @@ def make_block_mosaic_header(blockDocs, mosaicName, workDir):
             weightPaths=weightPathList, configs=swarpConfigs,
             workDir=workDir)
     swarp.run()
-    blockPath, weightPath = swarp.getMosaicPaths()
+    blockPath, weightPath = swarp.mosaic_paths()
     header = astropy.io.fits.getheader(blockPath)
     return header
 
