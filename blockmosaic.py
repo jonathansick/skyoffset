@@ -57,7 +57,7 @@ def block_mosaic(blockDocs, offsets, mosaicName, workDir,
             weightPaths=weightPathList, configs=swarpConfigs,
             workDir=workDir)
     swarp.run()
-    blockPath, weightPath = swarp.getMosaicPaths()
+    blockPath, weightPath = swarp.mosaic_paths()
     return blockPath, weightPath
 
 
