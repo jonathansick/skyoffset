@@ -291,13 +291,13 @@ class Couplings(object):
         areas = {}
         levels = {}
         for pair, diff in self.fieldDiffs.iteritems():
-            diffs["*".join(pair)] = diff
+            diffs["*".join(pair)] = float(diff)
         for pair, sigma in self.fieldDiffSigmas.iteritems():
-            sigmas["*".join(pair)] = sigma
+            sigmas["*".join(pair)] = float(sigma)
         for pair, area in self.fieldDiffAreas.iteritems():
-            areas["*".join(pair)] = area
+            areas["*".join(pair)] = float(area)
         for pair, level in self.fieldLevels.iteritems():
-            levels["*".join(pair)] = level
+            levels["*".join(pair)] = float(level)
         doc = {"fields": self.fields,
             "diffs": diffs,
             "sigmas": sigmas,
