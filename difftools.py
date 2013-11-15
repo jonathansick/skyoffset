@@ -581,8 +581,8 @@ def _computeDiff(arg):
             # Plot a histogram of the difference pixels
             plotPath = os.path.join(diffPlotDir,
                     "%s_%s" % (upperKey, lowerKey))
-            _diffHist(diffImage[goodPix].ravel(), diffPixelsMean,
-                    clippedMedian, sigma, upperKey, lowerKey, plotPath)
+            # _diffHist(diffImage[goodPix].ravel(), diffPixelsMean,
+            #         clippedMedian, sigma, upperKey, lowerKey, plotPath)
     else:
         offsetData = None
     return upperKey, lowerKey, offsetData
