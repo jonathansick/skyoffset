@@ -49,8 +49,10 @@ class ScalarMosaicFactory(object):
         
         # Make couplings
         if 'couplings' not in mosaicDoc or resetCouplings:
+            print "making couplings"
             couplings = self._make_couplings(mosaicName, blockDocs)
         else:
+            print "reloading couplings"
             couplings = self._reload_couplings(mosaicDoc['couplings'])
         
         # Precompute the output WCS; add to FootprintDB
