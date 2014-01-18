@@ -7,14 +7,14 @@ Make stacks from a set of chip images.
 """
 import os
 import multiprocessing
-import pyfits
+import astropy.io.fits as pyfits
 import numpy
 
 from moastro.astromatic import Swarp
 
-from wirpipe.disksky.difftools import SliceableImage
-from wirpipe.disksky.difftools import ResampledWCS
-from wirpipe.disksky.difftools import Overlap
+from andpipe.skyoffset.difftools import SliceableImage
+from andpipe.skyoffset.difftools import ResampledWCS
+from andpipe.skyoffset.difftools import Overlap
 
 from offsettools import apply_offset
 

@@ -2,10 +2,10 @@ import os
 import subprocess
 
 import montage
-import pyfits
+import astropy.io.fits as pyfits
 import numpy as np
 
-from owl.astromatic import Swarp
+from moastro.astromatic import Swarp
 
 import blockdb
 import mosaicdb
