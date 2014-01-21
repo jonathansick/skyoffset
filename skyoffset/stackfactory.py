@@ -12,9 +12,9 @@ import numpy
 
 from moastro.astromatic import Swarp
 
-from andpipe.skyoffset.difftools import SliceableImage
-from andpipe.skyoffset.difftools import ResampledWCS
-from andpipe.skyoffset.difftools import Overlap
+from difftools import SliceableImage
+from difftools import ResampledWCS
+from difftools import Overlap
 
 from offsettools import apply_offset
 
