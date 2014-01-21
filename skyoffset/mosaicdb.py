@@ -1,16 +1,10 @@
-import os
 import pymongo
-
-from andpipe import footprintdb
-from difftools import CoupledPlanes  # Planar couplings
-import offsettools
-import blockmosaic  # common mosaic construction functions
 
 
 class MosaicDB(object):
     """Database interface for a mosaic: a set of blocks."""
-    def __init__(self, dbname="m31", cname="mosaics", url="localhost",
-            port=27017):
+    def __init__(self, dbname="m31", cname="mosaics",
+            url="localhost", port=27017):
         super(MosaicDB, self).__init__()
         self.dbname = dbname
         self.cname = cname

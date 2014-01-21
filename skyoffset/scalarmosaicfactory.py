@@ -11,7 +11,6 @@ import astropy.io.fits
 import subprocess
 
 from difftools import Couplings  # Scalar couplings
-from andpipe import footprintdb
 from multisimplex import SimplexScalarOffsetSolver
 import blockmosaic  # common mosaic construction functions
 import offsettools
@@ -63,8 +62,7 @@ class ScalarMosaicFactory(object):
                 footprintSelector)
 
         # Retrieve the ResampledWCS for blocks and mosaic
-        footprintDB = footprintdb.FootprintDB()
-        mosaicWCS = footprintDB.make_resampled_wcs(footprintSelector)
+        mosaicWCS = self.footprintDB.make_resampled_wcs(footprintSelector)
         
         blockWCSs = {}
         for blockName, blockDoc in blockDocs.iteritems():
@@ -74,7 +72,7 @@ class ScalarMosaicFactory(object):
             sel = {"field": field, "FILTER": band}
             #blockName = "%s_%s" % (field, band) # Changed!
             print blockName
-            blockWCSs[blockName] = footprintDB.make_resampled_wcs(sel)
+            blockWCSs[blockName] = self.footprintDB.make_resampled_wcs(sel)
 
         self.mosaicDB.collection.update({"_id": mosaicName},
                 {"$set": {"solver_cname": mosaicName,
@@ -157,8 +155,7 @@ class ScalarMosaicFactory(object):
         """
         header = blockmosaic.make_block_mosaic_header(blockDocs, "test_frame",
                 workDir)
-        footprintDB = footprintdb.FootprintDB()
-        footprintDB.new_from_header(header, **metaData)
+        self.footprintDB.new_from_header(header, **metaData)
 
     def make_mosaic(self, mosaicName, blockSel, workDir,
             fieldnames=None, excludeFields=None):

@@ -12,17 +12,14 @@ History
 
 import math
 
-from mosaicdb import MosaicDB
 from difftools import Couplings  # Scalar couplings
 
 
 class ScalarResidualFlux(object):
     """Residual flux in a scalar-fit mosaic"""
-    def __init__(self, mosaicName):
+    def __init__(self, mosaicdb, mosaicName):
         super(ScalarResidualFlux, self).__init__()
-        print mosaicName
         self.mosaicName = mosaicName
-        mosaicdb = MosaicDB()
         mosaicDoc = mosaicdb.collection.find_one({"_id": mosaicName})
         self.offsets = mosaicDoc['offsets']
         self.couplings = Couplings.load_doc(mosaicDoc['couplings'])

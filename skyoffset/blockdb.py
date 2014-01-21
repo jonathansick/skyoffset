@@ -1,20 +1,18 @@
 import pymongo
 import astropy.io.fits
 
-from andpipe.footprintdb import FootprintDB
-
 
 class BlockDB(object):
     """Database interface for blocks: sets of detector stacks within a field.
     """
-    def __init__(self, dbname="m31", cname="wircam_blocks", url="localhost",
-            port=27017):
+    def __init__(self, footprintDB, dbname="m31", cname="wircam_blocks",
+            url="localhost", port=27017):
         super(BlockDB, self).__init__()
         self.dbname = dbname
         self.cname = cname
         self.url = url
         self.port = port
-        self.footprintDB = FootprintDB()
+        self.footprintDB = footprintDB
 
         connection = pymongo.Connection(self.url, self.port)
         self.db = connection[self.dbname]
@@ -24,8 +22,8 @@ class BlockDB(object):
         """Insert a block"""
         self.collection.save(doc, safe=True)
         if 'image_path' in doc:
-            self._add_footprint(doc['image_path'], doc['OBJECT'], doc['FILTER'],
-                    instrument=doc['instrument'])
+            self._add_footprint(doc['image_path'], doc['OBJECT'],
+                    doc['FILTER'], instrument=doc['instrument'])
 
     def update(self, blockName, key, value):
         """docstring for update"""
@@ -33,8 +31,8 @@ class BlockDB(object):
         if 'image_path' == key:
             doc = self.collection.find_one({"_id": blockName})
             print "update", doc
-            self._add_footprint(doc['image_path'], doc['OBJECT'], doc['FILTER'],
-                    instrument=doc['instrument'])
+            self._add_footprint(doc['image_path'], doc['OBJECT'],
+                    doc['FILTER'], instrument=doc['instrument'])
 
     def _add_footprint(self, path, fieldname, band, instrument):
         """Add this block to the FootprintDB"""
