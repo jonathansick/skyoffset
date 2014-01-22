@@ -53,7 +53,8 @@ class ChipStacker(object):
         stackDoc = {"_id": stackName,
                 "image_path": self.coaddPath,
                 "weight_path": self.coaddWeightPath,
-                "offsets": self.offsets}
+                "offsets": {ik: float(offset) for ik, offset
+                    in self.offsets.iteritems()}}
         if dbMeta is not None:
             stackDoc.update(dbMeta)
         self.stackDB.insert(stackDoc)
@@ -121,7 +122,7 @@ class ChipStacker(object):
         self.overlaps = {}
         for imageKey in self.imageKeys:
             self.overlaps[imageKey] \
-                    = Overlap(self.imageFrames[imageKey], self.coaddFrame)
+                = Overlap(self.imageFrames[imageKey], self.coaddFrame)
         
         # 3. Estimate offsets from the initial mean, and recompute the mean
         diffData = self._compute_differences()
@@ -137,7 +138,7 @@ class ChipStacker(object):
         self.overlaps = {}
         for imageKey in self.imageKeys:
             self.overlaps[imageKey] \
-                    = Overlap(self.imageFrames[imageKey], self.coaddFrame)
+                = Overlap(self.imageFrames[imageKey], self.coaddFrame)
 
         diffData = self._compute_differences()
         self.offsets = self._estimate_offsets(diffData)
