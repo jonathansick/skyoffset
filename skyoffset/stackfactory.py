@@ -15,8 +15,8 @@ from moastro.astromatic import Swarp
 from difftools import SliceableImage
 from difftools import ResampledWCS
 from difftools import Overlap
-
 from offsettools import apply_offset
+from noisefactory import NoiseMapFactory
 
 
 def main():
@@ -27,13 +27,18 @@ class ChipStacker(object):
     """General-purpose class for stacking single-extension FITS, adding a
     sky offset to achieve uniform sky bias.
     """
-    def __init__(self, stackDB, workDir):
+    def __init__(self, stackDB, workDir, swarp_configs=None):
         super(ChipStacker, self).__init__()
         self.workDir = workDir
         if os.path.exists(workDir) is False: os.makedirs(workDir)
         self.stackDB = stackDB
+        if swarp_configs:
+            self._swarp_configs = dict(swarp_configs)
+        else:
+            self._swarp_configs = {}
 
     def pipeline(self, imageKeys, imagePaths, weightPaths, stackName,
+            noise_paths=None,
             exptimes=None, skyLevels=None, zeropoints=None, stackZP=25.,
             pixScale=None, dbMeta=None, debug=False):
         """Pipeline for running the ChipStacker method to produce stacks
@@ -50,11 +55,17 @@ class ChipStacker(object):
         self.stack_images(imageKeys, imagePaths, weightPaths, stackName)
         self.remove_offset_frames()
         self.renormalize_weight()
+        if noise_paths:
+            self._make_noisemap(imageKeys, noise_paths,
+                [weightPaths[ik] for ik in imageKeys],  # FIXME
+                self.coaddPath)
         stackDoc = {"_id": stackName,
                 "image_path": self.coaddPath,
                 "weight_path": self.coaddWeightPath,
                 "offsets": {ik: float(offset) for ik, offset
                     in self.offsets.iteritems()}}
+        if self.noise_path:
+            stackDoc.update({"noise_path": self.noise_path})
         if dbMeta is not None:
             stackDoc.update(dbMeta)
         self.stackDB.insert(stackDoc)
@@ -169,14 +180,8 @@ class ChipStacker(object):
         for frame in self.currentOffsetPaths:
             imagePathList.append(self.currentOffsetPaths[frame])
             weightPathList.append(self.weightPaths[frame])
-        
-        configs = {"COMBINE_TYPE": combineType, "WEIGHT_TYPE": "MAP_WEIGHT",
-            "PROJECTION_TYPE": "AIT",
-            "NTHREADS": "8", "SUBTRACT_BACK": "N",
-            "WRITE_XML": "N", "VMEM_DIR": "/Volumes/Zaphod/tmp",
-            "MEM_MAX": "8000",
-            "COMBINE": "Y",
-            "RESAMPLE": "N"}
+        configs = dict(self._swarp_configs)
+        configs.update({'RESAMPLE': 'N', 'SUBTRACT_BACK': 'N'})
         swarp = Swarp(imagePathList, self.stackName,
                 weightPaths=weightPathList,
                 configs=configs, workDir=self.workDir)
@@ -249,6 +254,16 @@ class ChipStacker(object):
                 imageKey, offsetImagePath = result
                 self.currentOffsetPaths[imageKey] = offsetImagePath
             pool.terminate()
+
+    def _make_noisemap(self, imageKeys, noise_paths, weight_paths,
+            mosaic_path):
+        """Make a noise map for this coadd given noisemaps of individual
+        images.
+        """
+        factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
+                swarp_configs=dict(self._swarp_configs),
+                delete_temps=False)
+        self.noise_path = factory.map_path
 
 
 def _work_image_cal(arg):
