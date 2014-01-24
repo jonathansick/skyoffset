@@ -13,17 +13,23 @@ from difftools import Couplings  # Scalar couplings
 from multisimplex import SimplexScalarOffsetSolver
 import blockmosaic  # common mosaic construction functions
 import offsettools
+from noisefactory import NoiseMapFactory
 
 
 class ScalarMosaicFactory(object):
     """docstring for ScalarMosaicFactory"""
-    def __init__(self, blockDB, mosaicDB, footprintDB, workDir):
+    def __init__(self, blockDB, mosaicDB, footprintDB, workDir,
+            swarp_configs=None):
         super(ScalarMosaicFactory, self).__init__()
         self.blockDB = blockDB
         self.mosaicDB = mosaicDB
         self.footprintDB = footprintDB
         self.workDir = workDir
         if not os.path.exists(workDir): os.makedirs(workDir)
+        if swarp_configs:
+            self._swarp_configs = dict(swarp_configs)
+        else:
+            self._swarp_configs = {}
     
     def build(self, blockSelector, mosaicName,
             solverDBName, solverCName,
@@ -72,7 +78,7 @@ class ScalarMosaicFactory(object):
             print blockName
             blockWCSs[blockName] = self.footprintDB.make_resampled_wcs(sel)
 
-        self.mosaicDB.collection.update({"_id": mosaicName},
+        self.mosaicDB.c.update({"_id": mosaicName},
                 {"$set": {"solver_cname": mosaicName,
                           "solver_dbname": solverDBName}})
 
@@ -100,7 +106,7 @@ class ScalarMosaicFactory(object):
         couplings.make(diffImageDir)
         couplingsDoc = couplings.get_doc()
         print couplingsDoc
-        self.mosaicDB.collection.update({"_id": mosaicName},
+        self.mosaicDB.c.update({"_id": mosaicName},
                 {"$set": {"couplings": couplingsDoc}})
         return couplings
 
@@ -136,7 +142,7 @@ class ScalarMosaicFactory(object):
 
         offsets = solver.find_best_offsets()
 
-        self.mosaicDB.collection.update({"_id": mosaicName},
+        self.mosaicDB.c.update({"_id": mosaicName},
                 {"$set": {"offsets": offsets,
                     "solver_cname": mosaicName,
                     "solver_dbname": solverDBName}})
@@ -165,7 +171,7 @@ class ScalarMosaicFactory(object):
         offsets from the collection of solver documents.
         """
         self.workDir = os.path.join(workDir, mosaicName)
-        mosaicDoc = self.mosaicDB.collection.find_one({"_id": mosaicName})
+        mosaicDoc = self.mosaicDB.c.find_one({"_id": mosaicName})
         solverCName = mosaicDoc['solver_cname']
         solverDBName = mosaicDoc['solver_dbname']
 
@@ -181,24 +187,39 @@ class ScalarMosaicFactory(object):
         print "Using offsets", offsets
         
         blockPath, weightPath = blockmosaic.block_mosaic(blockDocs, offsets,
-                mosaicName, self.workDir,
+                mosaicName, self._swarp_configs, self.workDir,
                 offset_fcn=offsettools.apply_offset)
 
-        self.mosaicDB.collection.update({"_id": mosaicName},
+        self.mosaicDB.c.update({"_id": mosaicName},
                 {"$set": {"image_path": blockPath,
                           "weight_path": weightPath}})
 
+    def make_noisemap(self, mosaicname, block_selector):
+        """Make a Gaussian sigma noise map, propagating those from stacks."""
+        noise_paths, weight_paths = [], []
+        blockDocs = self.blockDB.find_blocks(block_selector)
+        for blockName, blockDoc in blockDocs.iteritems():
+            noise_paths.append(blockDoc['noise_path'])
+            weight_paths.append(blockDoc['weight_path'])
+        mosaic_doc = self.mosaicDB.find_one({"_id": mosaicname})
+        mosaic_path = mosaic_doc['image_path']
+        factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
+                swarp_configs=dict(self._swarp_configs),
+                delete_temps=False)
+        self.mosaicDB.set(mosaicname, "noise_path", factory.map_path)
+
     def subsample_mosaic(self, mosaicName, pixelScale=1., fluxscale=True):
         """Subsamples the existing mosaic to 1 arcsec/pixel."""
-        mosaicDoc = self.mosaicDB.collection.find_one({"_id": mosaicName})
+        mosaicDoc = self.mosaicDB.c.find_one({"_id": mosaicName})
         print "Mosaic Name:", mosaicName
         print "Mosaic Doc:", mosaicDoc
         fullMosaicPath = mosaicDoc['image_path']
         downsampledPath = blockmosaic.subsample_mosaic(fullMosaicPath,
+                self._swarp_configs,
                 pixelScale=pixelScale, fluxscale=fluxscale)
         downsampledWeightPath = os.path.splitext(downsampledPath)[0] \
                 + ".weight.fits"
-        self.mosaicDB.collection.update({"_id": mosaicName},
+        self.mosaicDB.c.update({"_id": mosaicName},
                 {"$set": {"subsampled_path": downsampledPath,
                           "subsampled_weight": downsampledWeightPath}})
         tiffPath = os.path.join(self.workDir, mosaicName + ".tif")

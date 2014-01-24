@@ -18,21 +18,27 @@ from moastro.astromatic import Swarp
 from difftools import Couplings
 from multisimplex import SimplexScalarOffsetSolver
 import offsettools
+from noisefactory import NoiseMapFactory
 
 
 class BlockFactory(object):
     """Build froms from sets of stacks within a field."""
-    def __init__(self, blockname, blockDB, stackDB, workDir):
+    def __init__(self, blockname, blockDB, stackDB, workDir,
+            swarp_configs=None):
         super(BlockFactory, self).__init__()
         self.blockDB = blockDB
         self.stackDB = stackDB
         self.workDir = workDir
         if not os.path.exists(workDir): os.makedirs(workDir)
         self.blockname = blockname
+        if swarp_configs:
+            self._swarp_configs = dict(swarp_configs)
+        else:
+            self._swarp_configs = {}
 
     def build(self, stackSelector, solverCName,
             freshStart=True, dbMeta={}, instrument="WIRCam",
-            solverDBName="skyoffsets", mp=False):
+            solverDBName="skyoffsets", mp=False, make_noise=True):
         """
         :param fieldname: the field of this block
         :param band: the FILTER of stacks
@@ -46,7 +52,7 @@ class BlockFactory(object):
         """
         self.mp = mp  # Bool flag to use multiprocessing
         print stackSelector
-        stackDocs = self.stackDB.find_stacks(stackSelector)
+        stackDocs = self.stackDB.find_mosaics(stackSelector)
         print stackDocs.keys()
         print "Found %i stack docs" % len(stackDocs.keys())
         # Make couplings
@@ -91,7 +97,7 @@ class BlockFactory(object):
         if freshStart:
             solver.resetdb()
         initSigma, resetSigma = self._simplex_dispersion(couplings)
-        solver.multi_start(couplings, 100, logPath, mp=self.mp, cython=True,
+        solver.multi_start(couplings, 5, logPath, mp=self.mp, cython=True,
                 initSigma=initSigma,
                 restartSigma=resetSigma)
         return solver
@@ -117,7 +123,7 @@ class BlockFactory(object):
         print blockDoc
         solverCName = blockDoc['solver_cname']
         solverDBName = blockDoc['solver_dbname']
-        stackDocs = stackDB.find_stacks(stackSel)
+        stackDocs = stackDB.find_mosaics(stackSel)
         solver = SimplexScalarOffsetSolver(dbname=solverDBName,
                 cname=solverCName, url=self.blockDB.url,
                 port=self.blockDB.port)
@@ -150,12 +156,11 @@ class BlockFactory(object):
 
         # By not resampling, it means that the block will still be in the
         # same resampling system as all other blocks (hopefully)
-        swarpConfigs = {"WEIGHT_TYPE": "MAP_WEIGHT",
-                "COMBINE_TYPE": "WEIGHTED",
-                "RESAMPLE": "N",
-                "COMBINE": "Y"}
+        swarp_configs = dict(self._swarp_configs)
+        swarp_configs.update(
+            {"COMBINE_TYPE": "AVERAGE", "RESAMPLE": "N", "COMBINE": "Y"})
         swarp = Swarp(imagePathList, blockName,
-                weightPaths=weightPathList, configs=swarpConfigs,
+                weightPaths=weightPathList, configs=swarp_configs,
                 workDir=self.workDir)
         swarp.run()
         blockPath, weightPath = swarp.mosaic_paths()
@@ -164,6 +169,20 @@ class BlockFactory(object):
 
         # Delete offset images
         shutil.rmtree(self.offsetDir)
+
+    def make_noisemap(self, stack_selector):
+        """Make a Gaussian sigma noise map, propagating those from stacks."""
+        noise_paths, weight_paths = [], []
+        stackDocs = self.stackDB.find_mosaics(stack_selector)
+        for stackName, stackDoc in stackDocs.iteritems():
+            noise_paths.append(stackDoc['noise_path'])
+            weight_paths.append(stackDoc['weight_path'])
+        block_doc = self.blockDB.find_one({"_id": self.blockname})
+        block_path = block_doc['image_path']
+        factory = NoiseMapFactory(noise_paths, weight_paths, block_path,
+                swarp_configs=dict(self._swarp_configs),
+                delete_temps=False)
+        self.blockDB.update(self.blockname, "noise_path", factory.map_path)
 
     def make_tiff(self, workDir):
         """Render a tiff image of this block into workDir"""

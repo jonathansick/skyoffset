@@ -26,7 +26,7 @@ class StackDB(ImageLog):
         for rec in recs:
             mosaicName = rec['_id']
             docs[mosaicName] = rec
-        return recs
+        return docs
 
     def get_mosaic_doc(self, mosaicName):
         """Return document for a single, named, mosaic."""

@@ -17,7 +17,7 @@ import moastro.astromatic
 import offsettools
 
 
-def block_mosaic(blockDocs, offsets, mosaicName, workDir,
+def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
         offset_fcn=offsettools.apply_offset,
         threads=multiprocessing.cpu_count()):
     """Construct a mosaic by offsetting blocks and swarping."""
@@ -50,11 +50,10 @@ def block_mosaic(blockDocs, offsets, mosaicName, workDir,
 
     # By not resampling, it means that the block will still be in the
     # same resampling system as all other blocks (hopefully)
-    swarpConfigs = {"WEIGHT_TYPE": "MAP_WEIGHT",
-            "COMBINE_TYPE": "WEIGHTED",
-            "RESAMPLE": "N", "COMBINE": "Y"}
+    swarp_configs = dict(swarp_configs)
+    swarp_configs.update({"RESAMPLE": "N", "COMBINE": "Y"})
     swarp = moastro.astromatic.Swarp(imagePathList, mosaicName,
-            weightPaths=weightPathList, configs=swarpConfigs,
+            weightPaths=weightPathList, configs=swarp_configs,
             workDir=workDir)
     swarp.run()
     blockPath, weightPath = swarp.mosaic_paths()
@@ -94,19 +93,12 @@ def make_block_mosaic_header(blockDocs, mosaicName, workDir):
     return header
 
 
-def subsample_mosaic(fullMosaicPath, pixelScale=1., fluxscale=True):
+def subsample_mosaic(fullMosaicPath, configs, pixelScale=1., fluxscale=True):
     """Subsamples the existing mosaic to `pixelScale` (arcsec/pixel)."""
     workDir = os.path.dirname(fullMosaicPath)
-    # Make a header of the full mosaic
-    configs = {"RESAMPLE_DIR": workDir,
-        "COMBINE": "N",
-        "RESAMPLE": "Y",
-        # "HEADER_ONLY":"Y", # only generate a header image
-        # "WEIGHT_TYPE":"MAP_WEIGHT",
-        "NTHREADS": "8", "SUBTRACT_BACK": "N",
-        "WRITE_XML": "N", "VMEM_DIR": "/Volumes/Zaphod/tmp",
-        #"PROJECTION_TYPE": "TAN", # aitoff equal-area projection
-        "MEM_MAX": "8000"}
+    configs = dict(configs)
+    configs['COMBINE'] = 'N'
+    configs['RESAMPLE'] = 'Y'
     configs['PIXEL_SCALE'] = "%.2f" % pixelScale
     configs['PIXELSCALE_TYPE'] = 'MANUAL'
     if fluxscale == False:
