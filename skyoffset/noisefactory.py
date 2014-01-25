@@ -48,7 +48,7 @@ class NoiseMapFactory(object):
         # Swarp component images of the mosaic
         coverage_paths, variance_paths = self._make_temp_images()
         coverage_map_path = self._make_coverage_map(coverage_paths)
-        var_sum_path = self._make_var_sum_map(variance_paths)
+        var_sum_path = self._make_var_sum_map(variance_paths, coverage_paths)
         # Combine the maps into a sigma map
         self._make_sigma_map(coverage_map_path,
                 var_sum_path)
@@ -81,7 +81,7 @@ class NoiseMapFactory(object):
             wfits.writeto(coverage_path, clobber=True)
             # Make a variance map
             fits[0].data = fits[0].data ** 2.
-            fits[0].data[wfits[0].data == 0.] = np.nan
+            fits[0].data[wfits[0].data == 0.] = 0.  # FIXME NaNs propagate bad?
             fits.writeto(var_path, clobber=True)
             fits.close()
             wfits.close()
@@ -105,14 +105,16 @@ class NoiseMapFactory(object):
         os.remove(coadd_weight_path)
         return coadd_path
 
-    def _make_var_sum_map(self, variance_paths):
+    def _make_var_sum_map(self, variance_paths, coverage_paths):
         """Make a map with the sum of variances."""
         configs = dict(self._configs)
         configs.update({"COMBINE_TYPE": "SUM", "RESAMPLE": "N",
+            "WEIGHT_TYPE": "MAP_WEIGHT",
             "SUBTRACT_BACK": "N"})
         name = os.path.basename(os.path.splitext(self._mosaic_path)[0]) \
                 + ".varsum.fits"
         swarp = Swarp(variance_paths, name,
+                weightPaths=coverage_paths,
                 configs=configs,
                 workDir=os.path.dirname(self._mosaic_path))
         swarp.set_target_fits(self._mosaic_path)
