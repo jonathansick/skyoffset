@@ -2,8 +2,6 @@
 # encoding: utf-8
 """
 Make stacks from a set of chip images.
-
-2012-05-18 - Created by Jonathan Sick
 """
 import os
 import multiprocessing
@@ -19,172 +17,157 @@ from offsettools import apply_offset
 from noisefactory import NoiseMapFactory
 
 
-def main():
-    pass
-
-
 class ChipStacker(object):
     """General-purpose class for stacking single-extension FITS, adding a
     sky offset to achieve uniform sky bias.
+
+    Parameters
+    ----------
+    stackdb : :class:`skyoffset.imagedb.StackDB` instance
+        The StackDB instance to store stack documents in.
+    workdir : str
+        Directory to make stacks in. This directory will be created if
+        necessary.
+    swarp_configs : dict
+        A dictionary of configurations to pass to
+        :class:`moastro.astromatic.Swarp`.
     """
-    def __init__(self, stackDB, workDir, swarp_configs=None):
+    def __init__(self, stackdb, workdir, swarp_configs=None):
         super(ChipStacker, self).__init__()
-        self.workDir = workDir
-        if os.path.exists(workDir) is False: os.makedirs(workDir)
-        self.stackDB = stackDB
+        self.workdir = workdir
+        if not os.path.exists(workdir):
+            os.makedirs(workdir)
+        self.stackdb = stackdb
         if swarp_configs:
             self._swarp_configs = dict(swarp_configs)
         else:
             self._swarp_configs = {}
 
-    def pipeline(self, imageKeys, imagePaths, weightPaths, stackName,
-            noise_paths=None,
-            exptimes=None, skyLevels=None, zeropoints=None, stackZP=25.,
-            pixScale=None, dbMeta=None, debug=False):
+    def pipeline(self, stack_name, image_keys, image_paths, weight_paths,
+            noise_paths=None, db_meta=None):
         """Pipeline for running the ChipStacker method to produce stacks
         and addd them to the stack DB.
+
+        Parameters
+        ----------
+        stack_name : str
+            Name of the stack being produced (for filenames and MongoDB 
+            document ``_id``s.
+        image_keys : list
+            List of image identifier strings (can be image keys from your
+            :class:`moastro.imagelog.ImageLog`.
+        image_paths : list
+            List of paths (strings) to images being stacked.
+        weight_paths : list
+            List of paths (strings) to weight maps, corresponding to
+            ``image_paths``.
+        noise_paths : list
+            List of paths (strings) to noise maps, corresponding to
+            ``iamge_paths``.
+        dbmeta : dict
+            Arbitrary metadata to store in the stack's StackDB document.
         """
-        cleanCal = False
-        if (skyLevels is not None) or (zeropoints is not None):
-            imagePaths = self.calibrate_images(imagePaths, exptimes,
-                    skyLevels, zeropoints, stackZP, pixScale=pixScale,
-                    debug=debug)
-            cleanCal = True
-        imagePaths = dict(zip(imageKeys, imagePaths))
-        weightPaths = dict(zip(imageKeys, weightPaths))
-        self.stack_images(imageKeys, imagePaths, weightPaths, stackName)
-        self.remove_offset_frames()
-        self.renormalize_weight()
+        image_paths = dict(zip(image_keys, image_paths))
+        weight_paths = dict(zip(image_keys, weight_paths))
+        self._stack_images(image_keys, image_paths, weight_paths, stack_name)
+        self._remove_offset_frames()
+        self._renormalize_weight()
         if noise_paths:
-            self._make_noisemap(imageKeys, noise_paths,
-                [weightPaths[ik] for ik in imageKeys],  # FIXME
-                self.coaddPath)
-        stackDoc = {"_id": stackName,
-                "image_path": self.coaddPath,
-                "weight_path": self.coaddWeightPath,
+            self._make_noisemap(image_keys, noise_paths,
+                [weight_paths[ik] for ik in image_keys],
+                self._coadd_path)
+        stack_doc = {"_id": stack_name,
+                "image_path": self._coadd_path,
+                "weight_path": self._coadd_weightpath,
                 "offsets": {ik: float(offset) for ik, offset
                     in self.offsets.iteritems()}}
         if self.noise_path:
-            stackDoc.update({"noise_path": self.noise_path})
-        if dbMeta is not None:
-            stackDoc.update(dbMeta)
-        self.stackDB.insert(stackDoc)
-        if cleanCal:
-            for imageKey, imagePath in imagePaths.iteritems():
-                os.remove(imagePath)
+            stack_doc.update({"noise_path": self.noise_path})
+        if db_meta is not None:
+            stack_doc.update(db_meta)
+        self.stackdb.c.save(stack_doc)
 
-    def calibrate_images(self, imagePaths, exptimes, skyLevels, zeropoints,
-            stackZP, pixScale=None, debug=False):
-        """docstring for calibrate_images"""
-        calDir = os.path.join(self.workDir, "cal")
-        if not os.path.exists(calDir): os.makedirs(calDir)
-        args = []
-        calImagePaths = []
-        for i, path in enumerate(imagePaths):
-            if skyLevels is None:
-                level = None
-            else:
-                level = skyLevels[i]
-            if zeropoints is None:
-                zp = None
-            else:
-                zp = zeropoints[i]
-            calPath = os.path.join(calDir, os.path.basename(path))
-            calImagePaths.append(calPath)
-            exptime = exptimes[i]
-            args.append((path, calPath, exptime, level, zp, stackZP, pixScale))
-        if not debug:
-            pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-            pool.map(_work_image_cal, args)
-            pool.terminate()
-        else:
-            map(_work_image_cal, args)
-        return calImagePaths
-
-    def stack_images(self, imageKeys, imagePaths, weightPaths, stackName):
+    def _stack_images(self, image_keys, image_paths, weight_paths, stack_name):
         """Make a stack with the given list of images.
-        :param imageKeys: list of strings identifying the listed image paths.
-        :param imagePaths: dict of paths to single-extension FITS image files.
-        :param weightPaths: dict of paths to weight images for `imagePaths`.
+        :param image_keys: list of strings identifying the listed image paths.
+        :param image_paths: dict of paths to single-extension FITS image files.
+        :param weight_paths: dict of paths to weight images for `image_paths`.
         :return: path to stacked image.
         """
-        self.imageKeys = imageKeys
-        self.imagePaths = imagePaths
-        self.weightPaths = weightPaths
-        self.stackName = stackName
+        self.image_keys = image_keys
+        self.image_paths = image_paths
+        self.weight_paths = weight_paths
+        self.stack_name = stack_name
         
-        # Turn the path lists into dictionaries
-        #self.currentOffsetPaths = dict(zip(self.imageKeys, self.imagePaths))
-        #self.weightPaths = dict(zip(self.imageKeys, self.weightPaths))
-        self.currentOffsetPaths = dict(imagePaths)
+        # Start with the original images
+        self._current_offset_paths = dict(image_paths)
 
         # Make resampled frames
-        self.imageFrames = {}
-        for imageKey in self.imageKeys:
-            header = pyfits.getheader(self.imagePaths[imageKey])
-            self.imageFrames[imageKey] = ResampledWCS(header)
+        self.image_frames = {}
+        for image_key, image_path in self.image_paths.iteritems():
+            header = pyfits.getheader(image_path)
+            self.image_frames[image_key] = ResampledWCS(header)
         
         # 1. Do initial coadd
-        print "Step 1 offset paths", self.currentOffsetPaths
-        self.coaddPath, self.coaddWeightPath, self.coaddFrame \
+        self._coadd_path, self._coadd_weightpath, self._coadd_frame \
                 = self._coadd_frames()
         
         # 2. Compute overlaps of frames to the coadded frame
         self.overlaps = {}
-        for imageKey in self.imageKeys:
-            self.overlaps[imageKey] \
-                = Overlap(self.imageFrames[imageKey], self.coaddFrame)
+        for image_key in self.image_keys:
+            self.overlaps[image_key] \
+                = Overlap(self.image_frames[image_key], self._coadd_frame)
         
         # 3. Estimate offsets from the initial mean, and recompute the mean
-        diffData = self._compute_differences()
-        offsets = self._estimate_offsets(diffData)
+        diff_data = self._compute_differences()
+        offsets = self._estimate_offsets(diff_data)
         self._make_offset_images(offsets)
-        print "Step 3 offset paths", self.currentOffsetPaths
-        self.coaddPath, self.coaddWeightPath, self.coaddFrame \
+        print "Step 3 offset paths", self._current_offset_paths
+        self._coadd_path, self._coadd_weightpath, self._coadd_frame \
                 = self._coadd_frames()
         
         # 4. Recompute offsets to ensure convergence.
         # Use a median for the final stack to get rid of artifacts
         # But need to recompute overlaps to coaddFrame, just in case...
         self.overlaps = {}
-        for imageKey in self.imageKeys:
+        for imageKey in self.image_keys:
             self.overlaps[imageKey] \
-                = Overlap(self.imageFrames[imageKey], self.coaddFrame)
+                = Overlap(self.image_frames[imageKey], self._coadd_frame)
 
-        diffData = self._compute_differences()
-        self.offsets = self._estimate_offsets(diffData)
+        diff_data = self._compute_differences()
+        self.offsets = self._estimate_offsets(diff_data)
         self._make_offset_images(self.offsets)
-        print "Step 4 offset paths", self.currentOffsetPaths
-        self.coaddPath, self.coaddWeightPath, self.coaddFrame \
-            = self._coadd_frames(combineType="MEDIAN")
+        print "Step 4 offset paths", self._current_offset_paths
+        self._coadd_path, self._coadd_weightpath, self._coadd_frame \
+            = self._coadd_frames()
 
-    def remove_offset_frames(self):
+    def _remove_offset_frames(self):
         print "currentOffsetPaths"
-        print self.currentOffsetPaths
-        for imageKey in self.imageKeys:
-            os.remove(self.currentOffsetPaths[imageKey])
-            print "Delete", self.currentOffsetPaths[imageKey]
+        print self._current_offset_paths
+        for imageKey in self.image_keys:
+            os.remove(self._current_offset_paths[imageKey])
+            print "Delete", self._current_offset_paths[imageKey]
 
-    def renormalize_weight(self):
+    def _renormalize_weight(self):
         """Renormalizes the weight image of the stack."""
-        fits = pyfits.open(self.coaddWeightPath)
+        fits = pyfits.open(self._coadd_weightpath)
         image = fits[0].data
         image[image > 0.] = 1.
         fits[0].data = image
-        fits.writeto(self.coaddWeightPath, clobber=True)
+        fits.writeto(self._coadd_weightpath, clobber=True)
 
-    def _coadd_frames(self, combineType="WEIGHTED"):
+    def _coadd_frames(self):
         """Swarps images together as their arithmetic mean."""
         imagePathList = []
         weightPathList = []
-        for frame in self.currentOffsetPaths:
-            imagePathList.append(self.currentOffsetPaths[frame])
-            weightPathList.append(self.weightPaths[frame])
+        for frame in self._current_offset_paths:
+            imagePathList.append(self._current_offset_paths[frame])
+            weightPathList.append(self.weight_paths[frame])
         configs = dict(self._swarp_configs)
         configs.update({'RESAMPLE': 'N', 'SUBTRACT_BACK': 'N'})
-        swarp = Swarp(imagePathList, self.stackName,
+        swarp = Swarp(imagePathList, self.stack_name,
                 weightPaths=weightPathList,
-                configs=configs, workDir=self.workDir)
+                configs=configs, workDir=self.workdir)
         swarp.run()
         coaddPath, coaddWeightPath = swarp.mosaic_paths()
         
@@ -200,28 +183,28 @@ class ChipStacker(object):
         args = []
         for imageKey, overlap in self.overlaps.iteritems():
             # framePath = self.imageLog[imageKey][self.resampledKey][hdu]
-            framePath = self.imagePaths[imageKey]
-            frameWeightPath = self.weightPaths[imageKey]
+            framePath = self.image_paths[imageKey]
+            frameWeightPath = self.weight_paths[imageKey]
             arg = (imageKey, framePath, frameWeightPath, "coadd",
-                    self.coaddPath, self.coaddWeightPath, overlap)
+                    self._coadd_path, self._coadd_weightpath, overlap)
             args.append(arg)
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-        results = pool.map(_computeDiff, args)
-        #results = map(_computeDiff, args)
+        results = pool.map(_compute_diff, args)
+        #results = map(_compute_diff, args)
         offsets = {}
         for result in results:
             frame, coaddKey, offsetData = result
-            offsets[frame] = offsetData  # look at _computeDiff() for spec
+            offsets[frame] = offsetData  # look at _compute_diff() for spec
         pool.terminate()
         return offsets
     
-    def _estimate_offsets(self, diffData):
+    def _estimate_offsets(self, diff_data):
         """Estimate offsets based on the simple difference of taht frame to
         the coadded surface intensity.
         """
         frames = []
         offsets = []
-        for frame, data in diffData.iteritems():
+        for frame, data in diff_data.iteritems():
             frames.append(frame)
             offsets.append(data['diffimage_mean'])
         offsets = dict(zip(frames, offsets))
@@ -230,19 +213,15 @@ class ChipStacker(object):
     def _make_offset_images(self, offsets):
         """Apply the offsets to the images, and save to disk."""
         if offsets is not None:
-            self.currentOffsetPaths = {}
-            offsetDir = os.path.join(self.workDir, "offset_frames")
+            self._current_offset_paths = {}
+            offsetDir = os.path.join(self.workdir, "offset_frames")
             if os.path.exists(offsetDir) is False:
                 os.makedirs(offsetDir)
             
             args = []
-            for imageKey in self.imageFrames:
+            for imageKey in self.image_frames:
                 offset = offsets[imageKey]
-                #print "Frame",
-                #print imageKey
-                #print "offset",
-                #print offset
-                origPath = self.imagePaths[imageKey]
+                origPath = self.image_paths[imageKey]
                 offsetPath = os.path.join(offsetDir,
                         os.path.basename(origPath))
                 arg = (imageKey, origPath, offset, offsetPath)
@@ -252,10 +231,10 @@ class ChipStacker(object):
             #results = map(apply_offset, args)
             for result in results:
                 imageKey, offsetImagePath = result
-                self.currentOffsetPaths[imageKey] = offsetImagePath
+                self._current_offset_paths[imageKey] = offsetImagePath
             pool.terminate()
 
-    def _make_noisemap(self, imageKeys, noise_paths, weight_paths,
+    def _make_noisemap(self, image_keys, noise_paths, weight_paths,
             mosaic_path):
         """Make a noise map for this coadd given noisemaps of individual
         images.
@@ -266,24 +245,7 @@ class ChipStacker(object):
         self.noise_path = factory.map_path
 
 
-def _work_image_cal(arg):
-    """Calibrates images with scalar sky subtraction and zeropoint calibration
-    in mag/arcsec^2.
-    """
-    path, calPath, exptime, level, zp, stackZP, pixScale = arg
-    fits = pyfits.open(path)
-    if level is not None:
-        fits[0].data = fits[0].data - level
-    if zp is not None:
-        sf = 10. ** (0.4 * (stackZP - zp)) / exptime / (pixScale ** 2.)
-        fits[0].data = fits[0].data * sf
-        gain = fits[0].header['GAIN']
-        gain = gain / sf
-        fits[0].header.update("GAIN", gain)
-    fits.writeto(calPath, clobber=True)
-
-
-def _computeDiff(arg):
+def _compute_diff(arg):
     """Worker: Computes the DC offset of frame-coadd"""
     upperKey, upperPath, upperWeightPath, lowerKey, lowerPath, \
             lowerWeightPath, overlap = arg
@@ -310,6 +272,3 @@ def _computeDiff(arg):
     else:
         diffData = None
     return upperKey, lowerKey, diffData
-
-if __name__ == '__main__':
-    main()
