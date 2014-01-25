@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-Make mosaics using scalar sky offsets
-
-2012-05-18 - Created by Jonathan Sick
+Make mosaics using scalar sky offsets.
 """
+
 import os
 import numpy as np
 import subprocess
@@ -17,97 +16,137 @@ from noisefactory import NoiseMapFactory
 
 
 class ScalarMosaicFactory(object):
-    """docstring for ScalarMosaicFactory"""
-    def __init__(self, blockDB, mosaicDB, footprintDB, workDir,
-            swarp_configs=None):
+    """Pipeline class for solving scalar sky offsets between overlapping images
+    and producing a mosaic.
+
+    Parameters
+    ----------
+    mosaic_name : str
+        Name of the mosaic being generated.
+    block_sel : dict
+        A MongoDB selector for blocks in the ``BlockDB``.
+    blockdb : :class:`moastro.imagelog.ImageLog` instance
+        A MosaicDB database containing *blocks*, the component images that
+        will be mosaiced together.
+    mosaicdb : :class:`moastro.imagelog.ImageLog` instance
+        A MosaicDB database where the final mosaic will be stored.
+    footprintdb : :class:`skyoffset.footprintdb.FootprintDB` instance
+        A FootprintDB instance to store footprints in.
+    workdir : str
+        Directory where the mosaic will be created. This directory will
+        be created if necessary.
+    swarp_configs : dict
+        A dictionary of configurations to pass to
+        :class:`moastro.astromatic.Swarp`.
+    """
+    def __init__(self, mosaic_name, block_sel, blockdb, mosaicdb, footprintdb,
+            workdir, swarp_configs=None):
         super(ScalarMosaicFactory, self).__init__()
-        self.blockDB = blockDB
-        self.mosaicDB = mosaicDB
-        self.footprintDB = footprintDB
-        self.workDir = workDir
-        if not os.path.exists(workDir): os.makedirs(workDir)
+        self.mosaic_name = mosaic_name
+        self.block_sel = dict(block_sel)
+        self.blockdb = blockdb
+        self.mosaicdb = mosaicdb
+        self.footprintdb = footprintdb
+        self.workdir = os.path.join(workdir, mosaic_name)
+        if not os.path.exists(workdir): os.makedirs(workdir)
         if swarp_configs:
             self._swarp_configs = dict(swarp_configs)
         else:
             self._swarp_configs = {}
     
-    def build(self, blockSelector, mosaicName,
-            solverDBName, solverCName,
-            nRuns=1000, dbMeta=None,
-            resetCouplings=False, freshStart=True,
-            initScale=5., restartScale=2.):
-        """Pipeline facade for building a scalar-sky-offset mosaic"""
-        print "Making mosaic", mosaicName
-        # Try to load a document with a previous run of this mosaic
-        mosaicDoc = self.mosaicDB.get_mosaic_doc(mosaicName)
-        if mosaicDoc is None:
-            mosaicDoc = {"_id": mosaicName}
-            mosaicDoc.update(dbMeta)  # add meta data for this mosaic
-            self.mosaicDB.insert(mosaicDoc)
-        else:
-            print "Found mosaicDoc fields", mosaicDoc.keys()
+    def solve_offsets(self, solver_dbname, solver_cname,
+            n_runs=1000, dbmeta=None,
+            reset_couplings=False, fresh_start=True,
+            init_scale=5., restart_scale=2.):
+        """Pipeline for solving the scalar sky offsets between a set of
+        blocks.
         
-        blockDocs = self.blockDB.find_blocks(blockSelector)
-        print "Working on blocks:", blockDocs.keys()
+        Parameters
+        ----------
+        solver_dbname : str
+            Name of the MongoDB database where results from sky offset
+            optimization are persisted.
+        solver_cname : str
+            Name of the MongoDB collection where results from sky offset
+            optimization are persisted.
+        n_runs : int
+            Number of optimizations to start; the sky offsets from the best
+            optimization run are chosen.
+        init_scale : float
+            Sets dispersion of initial guesses sky offsets as a fraction of
+            the block difference dispersion.
+        restart_scale : float
+            Sets dispersion of sky offset simplex re-inflation as a fraction of
+            the block difference dispersion after an optimization as converged.
+        dbmeta : dict
+            Arbitrary metadata to store in the mosaic's MongoDB document.
+        reset_couplings : bool
+            If ``True``, then the couplings (differences) between blocks
+            will be recomputed.
+        fresh_start : bool
+            If ``True``, then previous optimization runs for this mosaic
+            will be deleted from the sky offset solver MongoDB collection.
+        """
+        # Try to load a document with a previous run of this mosaic
+        mosaic_doc = self.mosaicdb.find({"_id": self.mosaic_name}, one=True)
+        if mosaic_doc is None:
+            mosaic_doc = {"_id": self.mosaic_name}
+            mosaic_doc.update(dbmeta)  # add meta data for this mosaic
+            self.mosaicdb.c.insert(mosaic_doc)
+        
+        block_docs = self.blockdb.find_dict(self.block_sel)
         
         # Make couplings
-        if 'couplings' not in mosaicDoc or resetCouplings:
-            print "making couplings"
-            couplings = self._make_couplings(mosaicName, blockDocs)
+        if 'couplings' not in mosaic_doc or reset_couplings:
+            couplings = self._make_couplings(block_docs)
         else:
-            print "reloading couplings"
-            couplings = self._reload_couplings(mosaicDoc['couplings'])
+            couplings = self._reload_couplings(mosaic_doc['couplings'])
         
         # Precompute the output WCS; add to FootprintDB
-        footprintSelector = {"mosaic_name": mosaicName,
-            "FILTER": mosaicDoc['FILTER'],
-            "kind": "mosaic"}
-        self._precompute_mosaic_footprint(blockDocs, self.workDir,
-                footprintSelector)
+        footprint_sel = {"mosaic_name": self.mosaic_name,
+            "FILTER": mosaic_doc['FILTER'],
+            "kind": "lsb_mosaic"}
+        self._precompute_mosaic_footprint(block_docs, self.workdir,
+                footprint_sel)
 
         # Retrieve the ResampledWCS for blocks and mosaic
-        mosaicWCS = self.footprintDB.make_resampled_wcs(footprintSelector)
+        mosaic_wcs = self.footprintdb.make_resampled_wcs(footprint_sel)
         
-        blockWCSs = {}
-        for blockName, blockDoc in blockDocs.iteritems():
-            print "the blockDoc:", blockDoc
-            field = blockDoc['OBJECT']
-            band = blockDoc['FILTER']
+        block_wcss = {}
+        for block_name, block_doc in block_docs.iteritems():
+            field = block_doc['OBJECT']
+            band = block_doc['FILTER']
             sel = {"field": field, "FILTER": band}
-            #blockName = "%s_%s" % (field, band) # Changed!
-            print blockName
-            blockWCSs[blockName] = self.footprintDB.make_resampled_wcs(sel)
+            block_wcss[block_name] = self.footprintdb.make_resampled_wcs(sel)
 
-        self.mosaicDB.c.update({"_id": mosaicName},
-                {"$set": {"solver_cname": mosaicName,
-                          "solver_dbname": solverDBName}})
+        self.mosaicdb.c.update({"_id": self.mosaic_name},
+                {"$set": {"solver_cname": self.mosaic_name,
+                          "solver_dbname": solver_dbname}})
 
         # Perform optimization
-        self._solve_offsets(mosaicName, solverDBName, couplings,
-                blockWCSs, mosaicWCS, initScale, restartScale,
-                freshStart=freshStart, nRuns=nRuns)
+        self._solve_offsets(self.mosaic_name, solver_dbname, couplings,
+                block_wcss, mosaic_wcs, init_scale, restart_scale,
+                fresh_start=fresh_start, n_runs=n_runs)
 
-    def _reload_couplings(self, couplingsDocument):
+    def _reload_couplings(self, couplings_doc):
         """Attempt to create a CoupledPlanes instance from a MongoDB
         persisted document."""
-        return Couplings.load_doc(couplingsDocument)
+        return Couplings.load_doc(couplings_doc)
     
-    def _make_couplings(self, mosaicName, blockDocs):
-        """Computes the couplings between blockDocs.
+    def _make_couplings(self, block_docs):
+        """Computes the couplings between block_docs.
         :return: a difftools.Couplings instance.
         """
         couplings = Couplings()
-        for blockName, blockDoc in blockDocs.iteritems():
-            print blockDoc
-            blockPath = blockDoc['image_path']
-            blockWeightPath = blockDoc['weight_path']
-            couplings.add_field(blockName, blockPath, blockWeightPath)
-        diffImageDir = os.path.join(self.workDir, "diffs")
+        for block_name, block_doc in block_docs.iteritems():
+            blockPath = block_doc['image_path']
+            blockWeightPath = block_doc['weight_path']
+            couplings.add_field(block_name, blockPath, blockWeightPath)
+        diffImageDir = os.path.join(self.workdir, "diffs")
         couplings.make(diffImageDir)
-        couplingsDoc = couplings.get_doc()
-        print couplingsDoc
-        self.mosaicDB.c.update({"_id": mosaicName},
-                {"$set": {"couplings": couplingsDoc}})
+        couplings_doc = couplings.get_doc()
+        self.mosaicdb.c.update({"_id": self.mosaic_name},
+                {"$set": {"couplings": couplings_doc}})
         return couplings
 
     def _simplex_dispersion(self, initScale, restartScale, couplings):
@@ -125,24 +164,24 @@ class ScalarMosaicFactory(object):
     
     def _solve_offsets(self, mosaicName, solverDBName, couplings,
             blockWCSs, mosaicWCS, initScale, restartScale,
-            freshStart=True, nRuns=1000):
+            fresh_start=True, n_runs=1000):
         """Use SimplexScalarOffsetSolver to derive offsets for this block."""
-        logPath = os.path.join(self.workDir, "%s.log" % mosaicName)
+        logPath = os.path.join(self.workdir, "%s.log" % mosaicName)
         solver = SimplexScalarOffsetSolver(dbname=solverDBName,
                 cname=mosaicName,
-                url=self.mosaicDB.url, port=self.mosaicDB.port)
+                url=self.mosaicdb.url, port=self.mosaicdb.port)
 
-        if freshStart:
+        if fresh_start:
             solver.resetdb()
         initSigma, resetSigma = self._simplex_dispersion(initScale,
                 restartScale, couplings)
-        solver.multi_start(couplings, nRuns, logPath, cython=True, mp=True,
+        solver.multi_start(couplings, n_runs, logPath, cython=True, mp=True,
                 initSigma=initSigma,
                 restartSigma=resetSigma)
 
         offsets = solver.find_best_offsets()
 
-        self.mosaicDB.c.update({"_id": mosaicName},
+        self.mosaicdb.c.update({"_id": mosaicName},
                 {"$set": {"offsets": offsets,
                     "solver_cname": mosaicName,
                     "solver_dbname": solverDBName}})
@@ -159,11 +198,9 @@ class ScalarMosaicFactory(object):
         """
         header = blockmosaic.make_block_mosaic_header(blockDocs, "test_frame",
                 workDir)
-        self.footprintDB.new_from_header(header, **metaData)
+        self.footprintdb.new_from_header(header, **metaData)
 
-    def make_mosaic(self, mosaicName, blockSel, workDir,
-            fieldnames=None, excludeFields=None,
-            target_fits=None):
+    def make_mosaic(self, block_selector=None, target_fits=None):
         """Swarp a mosaic using the optimal sky offsets.
         
         The mosaic can be made anytime once entries are added
@@ -173,65 +210,87 @@ class ScalarMosaicFactory(object):
 
         Parameters
         ----------
+        block_selector : dict
+            An alternative MongoDB block selector (used instead of the one
+            specific during instance initialization). This can be useful
+            for building a mosaic with a subset of the blocks.
         target_fits : str
             Set to the path of a FITS file that will be used to define the
             output frame of the block. The output blocks will then correspond
             pixel-to-pixel. Note that both blocks should already be resampled
             into the same pixel space.
         """
-        self.workDir = os.path.join(workDir, mosaicName)
-        mosaicDoc = self.mosaicDB.c.find_one({"_id": mosaicName})
-        solverCName = mosaicDoc['solver_cname']
-        solverDBName = mosaicDoc['solver_dbname']
+        mosaicDoc = self.mosaicdb.c.find_one({"_id": self.mosaic_name})
+        solver_cname = mosaicDoc['solver_cname']
+        solver_dbname = mosaicDoc['solver_dbname']
 
-        if fieldnames is not None:
-            blockSel["field"] = {"$in": fieldnames}
-        if excludeFields is not None:
-            blockSel["field"] = {"$nin": excludeFields}
-        blockDocs = self.blockDB.find_blocks(blockSel)
-        solver = SimplexScalarOffsetSolver(dbname=solverDBName,
-                cname=solverCName,
-                url=self.mosaicDB.url, port=self.mosaicDB.port)
+        if block_selector:
+            block_sel = dict(block_selector)
+        else:
+            block_sel = dict(self.block_sel)
+        bloc_docs = self.blockdb.find_dict(block_sel)
+        solver = SimplexScalarOffsetSolver(dbname=solver_dbname,
+                cname=solver_cname,
+                url=self.mosaicdb.url, port=self.mosaicdb.port)
         offsets = solver.find_best_offsets()
-        print "Using offsets", offsets
         
-        blockPath, weightPath = blockmosaic.block_mosaic(blockDocs, offsets,
-                mosaicName, self._swarp_configs, self.workDir,
+        mosaic_path, mosaic_weight_path = blockmosaic.block_mosaic(bloc_docs,
+                offsets, self.mosaic_name, self._swarp_configs, self.workdir,
                 target_fits=target_fits,
                 offset_fcn=offsettools.apply_offset)
 
-        self.mosaicDB.c.update({"_id": mosaicName},
-                {"$set": {"image_path": blockPath,
-                          "weight_path": weightPath}})
+        self.mosaicdb.c.update({"_id": self.mosaic_name},
+                {"$set": {"image_path": mosaic_path,
+                          "weight_path": mosaic_weight_path}})
 
-    def make_noisemap(self, mosaicname, block_selector):
-        """Make a Gaussian sigma noise map, propagating those from stacks."""
+    def make_noisemap(self, block_selector=None):
+        """Make a Gaussian sigma noise map, propagating those from stacks.
+
+        Parameters
+        ----------
+        block_selector : dict
+            An alternative MongoDB block selector (used instead of the one
+            specific during instance initialization). This can be useful
+            for building a mosaic with a subset of the blocks.
+        """
         noise_paths, weight_paths = [], []
-        blockDocs = self.blockDB.find_blocks(block_selector)
-        for blockName, blockDoc in blockDocs.iteritems():
+        if block_selector:
+            block_sel = dict(block_selector)
+        else:
+            block_sel = dict(self.block_sel)
+        block_docs = self.blockdb.find_dict(block_sel)
+        for blockName, blockDoc in block_docs.iteritems():
             noise_paths.append(blockDoc['noise_path'])
             weight_paths.append(blockDoc['weight_path'])
-        mosaic_doc = self.mosaicDB.find_one({"_id": mosaicname})
+        mosaic_doc = self.mosaicdb.find({"_id": self.mosaic_name}, one=True)
         mosaic_path = mosaic_doc['image_path']
         factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
                 swarp_configs=dict(self._swarp_configs),
                 delete_temps=True)
-        self.mosaicDB.set(mosaicname, "noise_path", factory.map_path)
+        self.mosaicdb.set(self.mosaic_name, "noise_path", factory.map_path)
 
-    def subsample_mosaic(self, mosaicName, pixelScale=1., fluxscale=True):
-        """Subsamples the existing mosaic to 1 arcsec/pixel."""
-        mosaicDoc = self.mosaicDB.c.find_one({"_id": mosaicName})
-        print "Mosaic Name:", mosaicName
+    def subsample_mosaic(self, pixel_scale=1., fluxscale=True):
+        """Subsamples the existing mosaic."""
+        mosaicDoc = self.mosaicdb.c.find_one({"_id": self.mosaic_name})
+        print "Mosaic Name:", self.mosaic_name
         print "Mosaic Doc:", mosaicDoc
         fullMosaicPath = mosaicDoc['image_path']
         downsampledPath = blockmosaic.subsample_mosaic(fullMosaicPath,
                 self._swarp_configs,
-                pixelScale=pixelScale, fluxscale=fluxscale)
+                pixel_scale=pixel_scale, fluxscale=fluxscale)
         downsampledWeightPath = os.path.splitext(downsampledPath)[0] \
                 + ".weight.fits"
-        self.mosaicDB.c.update({"_id": mosaicName},
+        self.mosaicdb.c.update({"_id": self.mosaic_name},
                 {"$set": {"subsampled_path": downsampledPath,
                           "subsampled_weight": downsampledWeightPath}})
-        tiffPath = os.path.join(self.workDir, mosaicName + ".tif")
+        tiffPath = os.path.join(self.workdir, self.mosaic_name + ".tif")
+        subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
+                % (downsampledPath, tiffPath), shell=True)
+
+    def make_tiff(self):
+        """Render a tiff image of this block."""
+        mosaicDoc = self.mosaicdb.c.find_one({"_id": self.mosaicname})
+        downsampledPath = mosaicDoc['image_path']
+        tiffPath = os.path.join(self.workdir, self.mosaicname + ".tif")
         subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
                 % (downsampledPath, tiffPath), shell=True)
