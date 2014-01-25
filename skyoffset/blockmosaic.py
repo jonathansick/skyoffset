@@ -19,6 +19,7 @@ import offsettools
 
 def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
         offset_fcn=offsettools.apply_offset,
+        target_fits=None,
         threads=multiprocessing.cpu_count()):
     """Construct a mosaic by offsetting blocks and swarping."""
     offsetDir = os.path.join(workDir, "offset_images")
@@ -55,6 +56,8 @@ def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
     swarp = moastro.astromatic.Swarp(imagePathList, mosaicName,
             weightPaths=weightPathList, configs=swarp_configs,
             workDir=workDir)
+    if target_fits and os.path.exists(target_fits):
+        swarp.set_target_fits(target_fits)
     swarp.run()
     blockPath, weightPath = swarp.mosaic_paths()
     return blockPath, weightPath

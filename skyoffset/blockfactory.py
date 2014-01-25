@@ -115,9 +115,19 @@ class BlockFactory(object):
         diffSigma = diffList.std()
         return 3 * diffSigma, 2 * diffSigma
     
-    def make_block_mosaic(self, stackDB, stackSel, blockName, workDir):
+    def make_block_mosaic(self, stackDB, stackSel, blockName, workDir,
+            target_fits=None):
         """The block mosaic can be made anytime once entries are added
-        to the solver's collection."""
+        to the solver's collection.
+        
+        Parameters
+        ----------
+        target_fits : str
+            Set to the path of a FITS file that will be used to define the
+            output frame of the block. The output blocks will then correspond
+            pixel-to-pixel. Note that both blocks should already be resampled
+            into the same pixel space.
+        """
         self.workDir = os.path.join(workDir, blockName)
         blockDoc = self.blockDB.find_one({"_id": blockName})
         print blockDoc
@@ -162,6 +172,8 @@ class BlockFactory(object):
         swarp = Swarp(imagePathList, blockName,
                 weightPaths=weightPathList, configs=swarp_configs,
                 workDir=self.workDir)
+        if target_fits and os.path.exists(target_fits):
+            swarp.set_target_fits(target_fits)
         swarp.run()
         blockPath, weightPath = swarp.mosaic_paths()
         self.blockDB.update(blockName, "image_path", blockPath)
@@ -181,7 +193,7 @@ class BlockFactory(object):
         block_path = block_doc['image_path']
         factory = NoiseMapFactory(noise_paths, weight_paths, block_path,
                 swarp_configs=dict(self._swarp_configs),
-                delete_temps=False)
+                delete_temps=True)
         self.blockDB.update(self.blockname, "noise_path", factory.map_path)
 
     def make_tiff(self, workDir):

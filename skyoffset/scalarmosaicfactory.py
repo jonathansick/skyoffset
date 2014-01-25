@@ -162,13 +162,22 @@ class ScalarMosaicFactory(object):
         self.footprintDB.new_from_header(header, **metaData)
 
     def make_mosaic(self, mosaicName, blockSel, workDir,
-            fieldnames=None, excludeFields=None):
+            fieldnames=None, excludeFields=None,
+            target_fits=None):
         """Swarp a mosaic using the optimal sky offsets.
         
         The mosaic can be made anytime once entries are added
         to the solver's collection. This is because we initialize
         a SimplexScalarOffsetSolver that re-generates the list of best
         offsets from the collection of solver documents.
+
+        Parameters
+        ----------
+        target_fits : str
+            Set to the path of a FITS file that will be used to define the
+            output frame of the block. The output blocks will then correspond
+            pixel-to-pixel. Note that both blocks should already be resampled
+            into the same pixel space.
         """
         self.workDir = os.path.join(workDir, mosaicName)
         mosaicDoc = self.mosaicDB.c.find_one({"_id": mosaicName})
@@ -188,6 +197,7 @@ class ScalarMosaicFactory(object):
         
         blockPath, weightPath = blockmosaic.block_mosaic(blockDocs, offsets,
                 mosaicName, self._swarp_configs, self.workDir,
+                target_fits=target_fits,
                 offset_fcn=offsettools.apply_offset)
 
         self.mosaicDB.c.update({"_id": mosaicName},
@@ -205,7 +215,7 @@ class ScalarMosaicFactory(object):
         mosaic_path = mosaic_doc['image_path']
         factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
                 swarp_configs=dict(self._swarp_configs),
-                delete_temps=False)
+                delete_temps=True)
         self.mosaicDB.set(mosaicname, "noise_path", factory.map_path)
 
     def subsample_mosaic(self, mosaicName, pixelScale=1., fluxscale=True):
