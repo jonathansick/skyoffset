@@ -56,7 +56,7 @@ class MosaicDB(ImageLog):
             Header for the mosaic.
         """
         wcs = astropy.wcs.WCS(header)
-        self.new_from_wcs(mosaic_name, wcs)
+        self.add_footprint_from_wcs(mosaic_name, wcs)
 
     def add_footprint_from_wcs(self, mosaic_name, wcs):
         """Create a footprint from the WCS embedded in a ``astropy.io.fits``

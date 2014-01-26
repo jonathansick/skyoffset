@@ -25,13 +25,11 @@ class ScalarMosaicFactory(object):
         Name of the mosaic being generated.
     block_sel : dict
         A MongoDB selector for blocks in the ``BlockDB``.
-    blockdb : :class:`moastro.imagelog.ImageLog` instance
+    blockdb : :class:`skyoffset.imagedb.MosaicDB` instance
         A MosaicDB database containing *blocks*, the component images that
         will be mosaiced together.
-    mosaicdb : :class:`moastro.imagelog.ImageLog` instance
+    mosaicdb : :class:`skyoffset.imagedb.MosaicDB` instance
         A MosaicDB database where the final mosaic will be stored.
-    footprintdb : :class:`skyoffset.footprintdb.FootprintDB` instance
-        A FootprintDB instance to store footprints in.
     workdir : str
         Directory where the mosaic will be created. This directory will
         be created if necessary.
@@ -39,14 +37,13 @@ class ScalarMosaicFactory(object):
         A dictionary of configurations to pass to
         :class:`moastro.astromatic.Swarp`.
     """
-    def __init__(self, mosaic_name, block_sel, blockdb, mosaicdb, footprintdb,
+    def __init__(self, mosaic_name, block_sel, blockdb, mosaicdb,
             workdir, swarp_configs=None):
         super(ScalarMosaicFactory, self).__init__()
         self.mosaic_name = mosaic_name
         self.block_sel = dict(block_sel)
         self.blockdb = blockdb
         self.mosaicdb = mosaicdb
-        self.footprintdb = footprintdb
         self.workdir = os.path.join(workdir, mosaic_name)
         if not os.path.exists(workdir): os.makedirs(workdir)
         if swarp_configs:
@@ -103,21 +100,15 @@ class ScalarMosaicFactory(object):
             couplings = self._reload_couplings(mosaic_doc['couplings'])
         
         # Precompute the output WCS; add to FootprintDB
-        footprint_sel = {"mosaic_name": self.mosaic_name,
-            "FILTER": mosaic_doc['FILTER'],
-            "kind": "lsb_mosaic"}
-        self._precompute_mosaic_footprint(block_docs, self.workdir,
-                footprint_sel)
+        self._precompute_mosaic_footprint(block_docs, self.workdir)
 
         # Retrieve the ResampledWCS for blocks and mosaic
-        mosaic_wcs = self.footprintdb.make_resampled_wcs(footprint_sel)
-        
+        mosaic_wcs = self.mosaicdb.make_resampled_wcs(
+            {"_id": self.mosaic_name})
         block_wcss = {}
         for block_name, block_doc in block_docs.iteritems():
-            field = block_doc['OBJECT']
-            band = block_doc['FILTER']
-            sel = {"field": field, "FILTER": band}
-            block_wcss[block_name] = self.footprintdb.make_resampled_wcs(sel)
+            sel = {"_id": block_name}
+            block_wcss[block_name] = self.blockdb.make_resampled_wcs(sel)
 
         self.mosaicdb.c.update({"_id": self.mosaic_name},
                 {"$set": {"solver_cname": self.mosaic_name,
@@ -187,7 +178,7 @@ class ScalarMosaicFactory(object):
                     "solver_dbname": solverDBName}})
         return solver
     
-    def _precompute_mosaic_footprint(self, blockDocs, workDir, metaData):
+    def _precompute_mosaic_footprint(self, blockDocs, workDir):
         """Do a Swarp dry-run to populate the FootprintDB with a record
         of this mosaic.
         :param blockDocs: dictionaries with Block data
@@ -198,7 +189,7 @@ class ScalarMosaicFactory(object):
         """
         header = blockmosaic.make_block_mosaic_header(blockDocs, "test_frame",
                 workDir)
-        self.footprintdb.new_from_header(header, **metaData)
+        self.mosaicdb.add_footprint_from_header(self.mosaic_name, header)
 
     def make_mosaic(self, block_selector=None, target_fits=None):
         """Swarp a mosaic using the optimal sky offsets.
@@ -289,8 +280,8 @@ class ScalarMosaicFactory(object):
 
     def make_tiff(self):
         """Render a tiff image of this block."""
-        mosaicDoc = self.mosaicdb.c.find_one({"_id": self.mosaicname})
+        mosaicDoc = self.mosaicdb.c.find_one({"_id": self.mosaic_name})
         downsampledPath = mosaicDoc['image_path']
-        tiffPath = os.path.join(self.workdir, self.mosaicname + ".tif")
+        tiffPath = os.path.join(self.workdir, self.mosaic_name + ".tif")
         subprocess.call("stiff -VERBOSE_TYPE QUIET %s -OUTFILE_NAME %s"
                 % (downsampledPath, tiffPath), shell=True)
