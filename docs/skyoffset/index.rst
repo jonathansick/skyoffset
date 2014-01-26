@@ -13,3 +13,8 @@ We use `Astromatic's Swarp <http://www.astromatic.net/software/swarp>`_ to handl
 
 Skyoffset is great for integrating into Python pipelines, with a convenient API and metadata storage in MongoDB.
 If you're looking for an alternative package that requires less technological buy-in, `IPAC's Montage <http://montage.ipac.caltech.edu>`_ is great.
+
+.. toctree::
+   :maxdepth: 2
+
+   api/index
