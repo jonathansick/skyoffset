@@ -5,7 +5,7 @@ Make stacks from a set of chip images.
 """
 import os
 import multiprocessing
-import astropy.io.fits as pyfits
+import astropy.io.fits
 import numpy
 
 from moastro.astromatic import Swarp
@@ -23,8 +23,8 @@ class ChipStacker(object):
 
     Parameters
     ----------
-    stackdb : :class:`skyoffset.imagedb.StackDB` instance
-        The StackDB instance to store stack documents in.
+    stackdb : :class:`skyoffset.imagedb.MosaicDB` instance
+        The MosaicDB instance to store stack documents in.
     workdir : str
         Directory to make stacks in. This directory will be created if
         necessary.
@@ -87,6 +87,10 @@ class ChipStacker(object):
             stack_doc.update(db_meta)
         self.stackdb.c.save(stack_doc)
 
+        # Define the stack's footprint
+        self.stackdb.add_footprint_from_header(stack_name,
+                astropy.io.fits.getheader(self._coadd_path))
+
     def _stack_images(self, image_keys, image_paths, weight_paths, stack_name):
         """Make a stack with the given list of images.
         :param image_keys: list of strings identifying the listed image paths.
@@ -105,7 +109,7 @@ class ChipStacker(object):
         # Make resampled frames
         self.image_frames = {}
         for image_key, image_path in self.image_paths.iteritems():
-            header = pyfits.getheader(image_path)
+            header = astropy.io.fits.getheader(image_path)
             self.image_frames[image_key] = ResampledWCS(header)
         
         # 1. Do initial coadd
@@ -150,11 +154,12 @@ class ChipStacker(object):
 
     def _renormalize_weight(self):
         """Renormalizes the weight image of the stack."""
-        fits = pyfits.open(self._coadd_weightpath)
+        fits = astropy.io.fits.open(self._coadd_weightpath)
         image = fits[0].data
         image[image > 0.] = 1.
         fits[0].data = image
         fits.writeto(self._coadd_weightpath, clobber=True)
+        fits.close()
 
     def _coadd_frames(self):
         """Swarps images together as their arithmetic mean."""
@@ -171,7 +176,7 @@ class ChipStacker(object):
         swarp.run()
         coaddPath, coaddWeightPath = swarp.mosaic_paths()
         
-        coaddHeader = pyfits.getheader(coaddPath, 0)
+        coaddHeader = astropy.io.fits.getheader(coaddPath, 0)
         coaddFrame = ResampledWCS(coaddHeader)
         
         return coaddPath, coaddWeightPath, coaddFrame
