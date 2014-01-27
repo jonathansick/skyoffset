@@ -96,13 +96,13 @@ def make_block_mosaic_header(blockDocs, mosaicName, workDir):
     return header
 
 
-def subsample_mosaic(fullMosaicPath, configs, pixelScale=1., fluxscale=True):
-    """Subsamples the existing mosaic to `pixelScale` (arcsec/pixel)."""
+def subsample_mosaic(fullMosaicPath, configs, pixel_scale=1., fluxscale=True):
+    """Subsamples the existing mosaic to `pixel_scale` (arcsec/pixel)."""
     workDir = os.path.dirname(fullMosaicPath)
     configs = dict(configs)
     configs['COMBINE'] = 'N'
     configs['RESAMPLE'] = 'Y'
-    configs['PIXEL_SCALE'] = "%.2f" % pixelScale
+    configs['PIXEL_SCALE'] = "%.2f" % pixel_scale
     configs['PIXELSCALE_TYPE'] = 'MANUAL'
     if fluxscale == False:
         configs['FSCALASTRO_TYPE'] = 'NONE'
