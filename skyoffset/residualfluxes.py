@@ -17,12 +17,12 @@ from difftools import Couplings  # Scalar couplings
 
 class ScalarResidualFlux(object):
     """Residual flux in a scalar-fit mosaic"""
-    def __init__(self, mosaicdb, mosaicName):
+    def __init__(self, mosaicdb, mosaic_name):
         super(ScalarResidualFlux, self).__init__()
-        self.mosaicName = mosaicName
-        mosaicDoc = mosaicdb.collection.find_one({"_id": mosaicName})
-        self.offsets = mosaicDoc['offsets']
-        self.couplings = Couplings.load_doc(mosaicDoc['couplings'])
+        self.mosaic_name = mosaic_name
+        mosaic_doc = mosaicdb.find({"_id": mosaic_name}, one=True)
+        self.offsets = mosaic_doc['offsets']
+        self.couplings = Couplings.load_doc(mosaic_doc['couplings'])
 
     def residual_fluxes(self):
         """Returns a dictioanry of pairKey: residual flux
@@ -69,4 +69,4 @@ class ScalarResidualFlux(object):
 
     def coupling_sigmas(self):
         """The standard deviations of image overlaps."""
-        return self.coupligns.fieldDiffSigmas
+        return self.couplings.fieldDiffSigmas
