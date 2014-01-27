@@ -106,9 +106,10 @@ def subsample_mosaic(fullMosaicPath, configs, pixel_scale=1., fluxscale=True):
     configs['PIXELSCALE_TYPE'] = 'MANUAL'
     if fluxscale == False:
         configs['FSCALASTRO_TYPE'] = 'NONE'
+    configs['RESAMPLE_DIR'] = workDir
     swarp = moastro.astromatic.Swarp([fullMosaicPath], "downsampled",
-    # weightPaths=weightPathList, # not dealing with weight images here
-    configs=configs, workDir=workDir)
+        # weightPaths=weightPathList, # not dealing with weight images here
+        configs=configs, workDir=workDir)
     swarp.run()
     downsampledPath = os.path.join(workDir,
         os.path.splitext(os.path.basename(fullMosaicPath))[0] + ".resamp.fits")
