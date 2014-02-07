@@ -5,6 +5,7 @@ Module for creating co-added noise maps (as Gaussian sigma in image DN units).
 """
 
 import os
+import shutil
 
 import numpy as np
 import astropy.io.fits
@@ -36,6 +37,8 @@ class NoiseMapFactory(object):
     def __init__(self, noise_paths, weight_paths, mosaic_path,
             swarp_configs=None, delete_temps=True):
         super(NoiseMapFactory, self).__init__()
+        self.MAX_NPIX_IN_MEMORY = 0.4e9  # max n pixel before using mmap
+        self.MEMMAP_CHUNK_SIZE = 1000  # number of rows to process in memmap
         self._paths = noise_paths
         self._weight_paths = weight_paths
         self._mosaic_path = mosaic_path
@@ -124,10 +127,45 @@ class NoiseMapFactory(object):
         return coadd_path
 
     def _make_sigma_map(self, coverage_path, variance_sum_path):
-        """Make a final sigma map."""
-        cfits = astropy.io.fits.open(coverage_path)
-        vfits = astropy.io.fits.open(variance_sum_path)
-        vfits[0].data = np.sqrt(vfits[0].data / cfits[0].data)
-        vfits.writeto(self._noise_map_path, clobber=True)
-        cfits.close()
-        vfits.close()
+        """Make a final sigma map.
+        
+        Since mosaics can be potentially very large, we open the coverage
+        and variance sum maps using a memory map and operate on chunks of rows
+        if the mosaic is larger than a defined size.
+        """
+        nx = astropy.io.fits.getval(variance_sum_path, 'NAXIS1', 0)
+        ny = astropy.io.fits.getval(variance_sum_path, 'NAXIS2', 0)
+        npix = nx * ny
+        if npix > self.MAX_NPIX_IN_MEMORY:
+            print "Using memmap for sigma map"
+            # mosaic is large enough to warrant memory mapping
+            # Process the noise map line-by-line
+            cfits = astropy.io.fits.open(coverage_path, memmap=True)
+            shutil.copy(variance_sum_path, self._noise_map_path)
+            vfits = astropy.io.fits.open(variance_sum_path,
+                    mode='update', memmap=True)
+            ymin = 0
+            ymax = ymin + self.MEMMAP_CHUNK_SIZE
+            while ymax <= ny:
+                vfits[0].data[ymin:ymax, :] = np.sqrt(
+                    vfits[0].data[ymin:ymax, :]
+                    / cfits[0].data[ymin:ymax, :])
+                vfits.flush()
+                # Update chunck range
+                ymin = ymax
+                ymax = ymin + self.MEMMAP_CHUNK_SIZE
+                if ymax > ny:
+                    ymax = ny
+                if ymin == ny:
+                    break
+            cfits.close()
+            vfits.close()
+        else:
+            print "In-memory for sigma map"
+            # Operate on entire mosaic in memory
+            cfits = astropy.io.fits.open(coverage_path)
+            vfits = astropy.io.fits.open(variance_sum_path)
+            vfits[0].data = np.sqrt(vfits[0].data / cfits[0].data)
+            vfits.writeto(self._noise_map_path, clobber=True)
+            cfits.close()
+            vfits.close()
