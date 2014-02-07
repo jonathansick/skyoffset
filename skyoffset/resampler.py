@@ -22,12 +22,16 @@ class MosaicResampler(object):
         A MosaicDB to store the resampled mosaics in.
     workdir : str
         Directory to make resampled mosaics in.
+    target_fits : str
+        (Optional) Path to a FITS image that defines the desired target
+        frame for the mosaics.
     """
-    def __init__(self, mosaicdb, workdir):
+    def __init__(self, mosaicdb, workdir, target_fits=None):
         super(MosaicResampler, self).__init__()
         self.mosaicdb = mosaicdb
 
         self._mosaic_cursors = []
+        self._target_fits = None
 
         self.workdir = workdir
         if not os.path.exists(self.workdir):
@@ -47,7 +51,7 @@ class MosaicResampler(object):
         if docs.count() > 0:
             self._mosaic_cursors.append(docs)
 
-    def resample(self, set_name, pix_scale, swarp_configs=None):
+    def resample(self, set_name, pix_scale=None, swarp_configs=None):
         """Resample mosaics to the given pixel scale.
         
         Mosaics will be identified in the MosaicDB with the ``set_name``.
@@ -60,7 +64,8 @@ class MosaicResampler(object):
             documents. The mosaics will also have ``set_name`` appended to
             their ``_id`` names.
         pix_scale : float
-            Pixel scale of the resampled mosaic, in arcseconds per pixel.
+            Pixel scale of the resampled mosaic, in arcseconds per
+            pixel. Ensure it is compatible with any `target_fits` provided.
         swarp_configs : dict
             Optional configuration dictionary to pass to Swarp.
         """
@@ -117,6 +122,8 @@ class MosaicResampler(object):
             configs=swarp_configs,
             workDir=self.work_dir)
         swarp.run()
+        if self._target_fits:
+            swarp.set_target_fits(self._target_fits)
         resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
         rimage_paths.append(resamp_paths[0]['0'])
         rweight_paths.append(resamp_wpaths[0]['0'])
@@ -127,7 +134,10 @@ class MosaicResampler(object):
                 weightPaths=weight_paths,
                 configs=swarp_configs,
                 workDir=self.work_dir)
-            swarp.set_target_fits(resamp_paths[0])
+            if self._target_fits:
+                swarp.set_target_fits(self._target_fits)
+            else:
+                swarp.set_target_fits(resamp_paths[0])
             swarp.run()
             resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
             rimage_paths.extend([d['0'] for d in resamp_paths])
