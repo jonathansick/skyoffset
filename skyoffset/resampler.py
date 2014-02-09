@@ -162,27 +162,29 @@ class MosaicResampler(object):
         rweight_paths = []
 
         # Resample first image and use it as a target frame for others
-        swarp = moastro.astromatic.Swarp([image_paths[0]], set_name,
-            weightPaths=[weight_paths],
-            configs=swarp_configs,
-            workDir=self.workdir)
-        swarp.run()
-        if self._target_fits:
-            swarp.set_target_fits(self._target_fits)
-        resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
-        rimage_paths.append(resamp_paths[0]['0'])
-        rweight_paths.append(resamp_wpaths[0]['0'])
+        if not self._target_fits:
+            swarp = moastro.astromatic.Swarp([image_paths[0]], set_name,
+                weightPaths=[weight_paths[0]],
+                configs=swarp_configs,
+                workDir=self.workdir)
+            swarp.run()
+            resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
+            rimage_paths.append(resamp_paths[0]['0'])
+            rweight_paths.append(resamp_wpaths[0]['0'])
+            resample_indices = range(1, len(image_paths))
+            self._target_fits = rimage_paths[0]
+        else:
+            resample_indices = range(len(image_paths))
 
         # Resample other images into same frame.
         if len(image_paths) > 1:
-            swarp = moastro.astromatic.Swarp(image_paths, set_name,
-                weightPaths=weight_paths,
+            _im_paths = [image_paths[i] for i in resample_indices]
+            _w_paths = [weight_paths[i] for i in resample_indices]
+            swarp = moastro.astromatic.Swarp(_im_paths, set_name,
+                weightPaths=_w_paths,
                 configs=swarp_configs,
                 workDir=self.workdir)
-            if self._target_fits:
-                swarp.set_target_fits(self._target_fits)
-            else:
-                swarp.set_target_fits(resamp_paths[0])
+            swarp.set_target_fits(self._target_fits)
             swarp.run()
             resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
             rimage_paths.extend([d['0'] for d in resamp_paths])
