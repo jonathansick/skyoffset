@@ -7,3 +7,4 @@ API Reference
    imagedb
    stackfactory
    scalarmosaicfactory
+   resampler
