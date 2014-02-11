@@ -65,6 +65,7 @@ class MosaicResampler(object):
         noise_paths : list
             Optional list of FITS noise paths.
         """
+        docs = []
         for i, image_path in enumerate(image_paths):
             doc = {'image_path': image_path,
                     '_id': os.path.splitext(os.path.basename(image_path))[0]}
@@ -72,7 +73,8 @@ class MosaicResampler(object):
                 doc['weight_path'] = weight_paths[i]
             if noise_paths:
                 doc['noise_path'] = noise_paths[i]
-            self._mosaic_cursors.append(doc)
+            docs.append(doc)
+        self._mosaic_cursors.append(docs)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
         """Resample mosaics to the given pixel scale.
