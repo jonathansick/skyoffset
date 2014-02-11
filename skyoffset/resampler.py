@@ -130,7 +130,8 @@ class MosaicResampler(object):
             image_paths, weight_paths)
         if noise_paths:
             resampled_noise_paths = self._resample_noise(set_name,
-                swarp_configs, resampled_image_paths, noise_paths)
+                swarp_configs, resampled_image_paths, resampled_weight_paths,
+                noise_paths)
         for i, (mosaic_id, base_doc, resamp_path) in enumerate(
                 zip(mosaic_ids, mosaic_docs, resampled_image_paths)):
             mosaic_name = doc['_id'] + "_%s" % set_name
@@ -148,7 +149,7 @@ class MosaicResampler(object):
                 del doc['couplings']
             if self.mosaicdb:
                 self.mosaicdb.c.save(doc)
-                self.mosaicdb.add_footprint_from_header(
+                self.mosaicdb.add_footprint_from_header(doc['_id'],
                     astropy.io.fits.get_header(resamp_path, 0))
             else:
                 resamp_docs.append(doc)
