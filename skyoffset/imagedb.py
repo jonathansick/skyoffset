@@ -80,23 +80,31 @@ class MosaicDB(ImageLog):
         wcs : :class:`astropy.wcs.WCS` instance
             WCS for the mosaic.
         """
-        naxis = (wcs.naxis1, wcs.naxis2)  # hopefully WCS has this from header
-        crpix = tuple(wcs.wcs.crpix)  # (CRPIX1, CRPIX2)
-        crval = tuple(wcs.wcs.crval)  # (CRVAL1, CRVAL2)
-        ctype = tuple(wcs.wcs.ctype)
-        # Make CD array, cast as list
-        cd = []
-        for (cdi, cdj) in wcs.wcs.cd:
-            cd.append([cdi, cdj])
+        doc = {}
+        doc['naxis'] = (wcs.naxis1, wcs.naxis2)
+        doc['crpix'] = tuple(wcs.wcs.crpix)  # (CRPIX1, CRPIX2)
+        doc['crval'] = tuple(wcs.wcs.crval)  # (CRVAL1, CRVAL2)
+        doc['ctype'] = tuple(wcs.wcs.ctype)
+        if wcs.wcs.has_cd():
+            cd = []
+            for (cdi, cdj) in wcs.wcs.cd:
+                cd.append([cdi, cdj])
+            doc['cd'] = cd
+        try:
+            doc['cdelt'] = tuple(wcs.wcs.cdelt)
+        except:
+            pass
+        try:
+            doc['crota'] = tuple(wcs.wcs.crota)
+        except:
+            pass
         # Make footprint polygon, cast to a list
         raDecFootprintArray = wcs.calcFootprint()
         raDecFootprint = []
         for (ra, dec) in raDecFootprintArray:
             raDecFootprint.append([ra, dec])
-
-        doc = {"naxis": naxis, "ctype": ctype, "crpix": crpix, "crval": crval,
-                "cd": cd, "radec_poly": raDecFootprint}
-        
+        doc['radec_poly'] = raDecFootprint
+        # Add footprint to mosaic document
         self.set(mosaic_name, "footprint", doc)
 
     def find_overlapping(self, mosaic_name, selector):
