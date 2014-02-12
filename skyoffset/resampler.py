@@ -191,10 +191,103 @@ class MosaicResampler(object):
         swarp.set_target_fits(self._target_fits)
         swarp.run()
         resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
+        # Trim the resampled images to ensure NAXISi and CRPIXi match
         rimage_paths.extend([d['0'] for d in resamp_paths])
         rweight_paths.extend([d['0'] for d in resamp_paths])
+        self._resize_resampled_images(self._target_fits, rimage_paths)
+        self._resize_resampled_images(self._target_fits, rweight_paths)
 
         return rimage_paths, rweight_paths
+
+    def _resize_resampled_images(self, target_fits_path, resampled_paths):
+        """Ensures that the CRPIX, CRVAL and NAXIS1/2 values of the resampled
+        images match the target, and crops/adds padding if not. Swarp *should*
+        do this properly, but sometimes does not.
+        """
+        target_fits = astropy.io.fits.open(target_fits_path)
+        rNAXIS1 = target_fits[0].header['NAXIS1']
+        rNAXIS2 = target_fits[0].header['NAXIS2']
+        rCRPIX1 = target_fits[0].header['CRPIX1']
+        rCRPIX2 = target_fits[0].header['CRPIX2']
+        for path in resampled_paths:
+            touched = False  # toggled True if image modified
+            print "path", path
+            fits = astropy.io.fits.open(path)
+            image = fits[0].data
+            print "orig shape", image.shape
+
+            # x-axis
+            if rCRPIX1 > fits[0].header['CRPIX1']:
+                # pad from left
+                print "CRPIX1 conflict %i %i" \
+                    % (rCRPIX1, fits[0].header['CRPIX1'])
+                dx = rCRPIX1 - fits[0].header['CRPIX1']
+                print "Pad left by %i" % dx
+                pad = np.ones((image.shape[0], dx)) * np.nan
+                image = np.hstack((pad, image))
+                print image.shape
+                touched = True
+            elif rCRPIX1 < fits[0].header['CRPIX1']:
+                # trim from left
+                print "CRPIX1 conflict %i %i" \
+                    % (rCRPIX1, fits[0].header['CRPIX1'])
+                dx = fits[0].header['CRPIX1'] - rCRPIX1
+                print "Trim left by %i" % dx
+                image = image[:, dx:]
+                print image.shape
+                touched = True
+            if rNAXIS1 > image.shape[1]:
+                # pad to the right
+                print "NAXIS1 conflict %i %i" % (rNAXIS1, image.shape[1])
+                dx = rNAXIS1 - image.shape[1]
+                print "Pad from right by %i" % dx
+                pad = np.ones((image.shape[0], dx)) * np.nan
+                image = np.hstack((image, pad))
+                print image.shape
+                touched = True
+            elif rNAXIS1 < image.shape[1]:
+                # trim from right
+                print "NAXIS1 conflict %i %i" % (rNAXIS1, image.shape[1])
+                dx = image.shape[1] - rNAXIS1
+                print "Trim from right by %i" % dx
+                image = image[:, :-dx]
+                print image.shape
+                touched = True
+
+            # y-axis
+            crpix2 = fits[0].header['CRPIX2']
+            if rCRPIX2 > crpix2:
+                # Pad from bottom (high index in image array)
+                dx = rCRPIX2 - crpix2
+                pad = np.ones((dx, image.shape[1])) * np.nan
+                image = np.vstack((image, pad))
+                touched = True
+            elif rCRPIX2 < crpix2:
+                # Trim from bottom (high index in image array)
+                image = image[:-dx, :]
+                touched = True
+            if rNAXIS2 > image.shape[0]:
+                # Trim from top (low index in image array)
+                image = image[dx:, :]
+                touched = True
+            elif rNAXIS2 < image.shape[0]:
+                # Pad from top (low index in image array)
+                dx = crpix2 - rCRPIX2
+                pad = np.ones((dx, image.shape[1])) * np.nan
+                image = np.vstack((pad, image))
+                pass
+                touched = True
+
+            if touched:
+                fits[0].data = image
+                fits[0].header.update('NAXIS1', image.shape[1])
+                fits[0].header.update('NAXIS2', image.shape[0])
+                fits[0].header.update('CRPIX1', rCRPIX1)
+                fits[0].header.update('CRPIX2', rCRPIX2)
+                fits.writeto(path, clobber=True)
+            fits.close()
+
+        target_fits.close()
 
     def _resample_noise(self, set_name, swarp_configs, image_paths,
             weight_paths, noise_paths):
