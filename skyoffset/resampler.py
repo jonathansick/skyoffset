@@ -72,8 +72,7 @@ class MosaicResampler(object):
                 doc['weight_path'] = weight_paths[i]
             if noise_paths:
                 doc['noise_path'] = noise_paths[i]
-            docs.append(doc)
-        self._mosaic_docs.append(docs)
+        self._mosaic_docs.append(doc)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
         """Resample mosaics to the given pixel scale.
@@ -122,17 +121,14 @@ class MosaicResampler(object):
                 weight_paths.append(doc['weight_path'])
             else:
                 weight_paths = None
-            if noise_paths is not None and 'noise_path' in doc:
+            if 'noise_path' in doc:
                 noise_paths.append(doc['noise_path'])
             else:
-                noise_paths = None
+                noise_paths.append(None)
+        # Resample images and weight paths
         resampled_image_paths, resampled_weight_paths = self._resample_images(
             set_name, swarp_configs,
             image_paths, weight_paths)
-        if noise_paths:
-            resampled_noise_paths = self._resample_noise(set_name,
-                swarp_configs, resampled_image_paths, resampled_weight_paths,
-                noise_paths)
         for i, (mosaic_id, base_doc, resamp_path) in enumerate(
                 zip(mosaic_ids, mosaic_docs, resampled_image_paths)):
             mosaic_name = doc['_id'] + "_%s" % set_name
@@ -142,12 +138,18 @@ class MosaicResampler(object):
             doc['image_path'] = resamp_path
             if weight_paths:
                 doc['weight_path'] = resampled_weight_paths[i]
-            if noise_paths:
-                doc['noise_path'] = resampled_noise_paths[i]
+            # if noise_paths:
+            #     doc['noise_path'] = resampled_noise_paths[i]
             doc['set_name'] = set_name
             doc['pix_scale'] = pix_scale
             if 'couplings' in doc:
                 del doc['couplings']
+            # Resample the noise frame now, if it exists
+            if noise_paths[i] is not None:
+                resamp_noise_path = self._resample_noise(set_name,
+                    swarp_configs, [resamp_path], [doc['weight_path']],
+                    [noise_paths[i]])[0]
+                doc['noise_path'] = resamp_noise_path
             if self.mosaicdb:
                 self.mosaicdb.c.save(doc)
                 self.mosaicdb.add_footprint_from_header(doc['_id'],
