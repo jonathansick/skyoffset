@@ -30,7 +30,7 @@ class MosaicResampler(object):
         super(MosaicResampler, self).__init__()
         self.mosaicdb = mosaicdb
 
-        self._mosaic_cursors = []
+        self._mosaic_docs = []
         self._target_fits = target_fits
 
         self.workdir = workdir
@@ -48,8 +48,8 @@ class MosaicResampler(object):
         docs : :class:`pymongo.cursor.Cursor`
             A query cursor with documents to include in the resampling.
         """
-        if docs.count() > 0:
-            self._mosaic_cursors.append(docs)
+        for doc in docs:
+            self._mosaic_docs.append(doc)
 
     def add_images_by_path(self, image_paths, weight_paths=None,
             noise_paths=None):
@@ -65,7 +65,6 @@ class MosaicResampler(object):
         noise_paths : list
             Optional list of FITS noise paths.
         """
-        docs = []
         for i, image_path in enumerate(image_paths):
             doc = {'image_path': image_path,
                     '_id': os.path.splitext(os.path.basename(image_path))[0]}
@@ -74,7 +73,7 @@ class MosaicResampler(object):
             if noise_paths:
                 doc['noise_path'] = noise_paths[i]
             docs.append(doc)
-        self._mosaic_cursors.append(docs)
+        self._mosaic_docs.append(docs)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
         """Resample mosaics to the given pixel scale.
@@ -115,19 +114,18 @@ class MosaicResampler(object):
         weight_paths = []
         noise_paths = []
         resamp_docs = []
-        for cursor in self._mosaic_cursors:
-            for doc in cursor:
-                mosaic_docs.append(doc)
-                mosaic_ids.append(doc['_id'])
-                image_paths.append(doc['image_path'])
-                if weight_paths is not None and 'weight_path' in doc:
-                    weight_paths.append(doc['weight_path'])
-                else:
-                    weight_paths = None
-                if noise_paths is not None and 'noise_path' in doc:
-                    noise_paths.append(doc['noise_path'])
-                else:
-                    noise_paths = None
+        for doc in self._mosaic_docs:
+            mosaic_docs.append(doc)
+            mosaic_ids.append(doc['_id'])
+            image_paths.append(doc['image_path'])
+            if weight_paths is not None and 'weight_path' in doc:
+                weight_paths.append(doc['weight_path'])
+            else:
+                weight_paths = None
+            if noise_paths is not None and 'noise_path' in doc:
+                noise_paths.append(doc['noise_path'])
+            else:
+                noise_paths = None
         resampled_image_paths, resampled_weight_paths = self._resample_images(
             set_name, swarp_configs,
             image_paths, weight_paths)
