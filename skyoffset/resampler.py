@@ -72,7 +72,7 @@ class MosaicResampler(object):
                 doc['weight_path'] = weight_paths[i]
             if noise_paths:
                 doc['noise_path'] = noise_paths[i]
-        self._mosaic_docs.append(doc)
+            self._mosaic_docs.append(doc)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
         """Resample mosaics to the given pixel scale.
