@@ -153,7 +153,7 @@ class MosaicResampler(object):
             if self.mosaicdb:
                 self.mosaicdb.c.save(doc)
                 self.mosaicdb.add_footprint_from_header(doc['_id'],
-                    astropy.io.fits.get_header(resamp_path, 0))
+                    astropy.io.fits.getheader(resamp_path, 0))
             else:
                 resamp_docs.append(doc)
         if resamp_docs:
