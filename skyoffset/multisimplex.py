@@ -70,14 +70,23 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
                 cname, url, port)
     
     def multi_start(self, couplings, nTrials, logPath, initSigma=6e-10,
-            restartSigma=1e-11, mp=True, cython=True):
+            restartSigma=1e-11, mp=True, cython=True, log_xtol=-6.,
+            log_ftol=-5.):
         """Start processing using the Multi-Start Reconverging algorithm.
-        :param nTrials: number of times a simplex is started.
-        :param initSigma: dispersion of offsets
-        :param restartSigma: dispersion of offsets about a converged point
-            when making a restart simplex.
-        :param mp: if True, run simplexes in parallel with `multiprocessing`.
-        :param cython: True to use the cython version of simplex.
+
+        Parameters
+        ----------
+        nTrials : int
+            Number of times a simplex is started.
+        initSigma : float
+            Dispersion of offsets
+        restartSigma : float
+            Dispersion of offsets about a converged point when making a
+            restart simplex.
+        mp : bool
+            If True, run simplexes in parallel with `multiprocessing`.
+        cython : bool
+            True to use the cython version of simplex.
         """
         self.logPath = logPath
         self._prep_log_file()
@@ -85,18 +94,18 @@ class SimplexScalarOffsetSolver(MultiStartSimplex):
         if cython:
             self.objf = cyscalarobj.ScalarObjective(self.couplings)
         else:
-            self.objf = ScalarObjective(self.couplings) # object function instance
+            self.objf = ScalarObjective(self.couplings)
 
         ndim = self.objf.get_ndim()
-        xtol = 10.**(-6.) # fractional error in offsets acceptable for convergence
-        ftol = 10.**(-5.) # fractional error in objective function acceptable for convergence
+        xtol = 10. ** log_xtol  # frac error in offsets acceptable for conv
+        ftol = 10. ** log_ftol  # frac error in objective function acceptable
         maxiter = 100000 * ndim
         maxEvals = 100000 * ndim
-        simplexArgs = {'xtol':xtol, 'ftol':ftol, 'maxiter':maxiter,
-            'maxfun':maxEvals, 'full_output':True, 'disp':True,
-            'retall':False, 'callback':None}
-        dbArgs = {'dbname':self.dbname, 'cname':self.cname, 'url':self.url,
-                'port':self.port}
+        simplexArgs = {'xtol': xtol, 'ftol': ftol, 'maxiter': maxiter,
+            'maxfun': maxEvals, 'full_output': True, 'disp': True,
+            'retall': False, 'callback': None}
+        dbArgs = {'dbname': self.dbname, 'cname': self.cname, 'url': self.url,
+                'port': self.port}
         
         # Create initial simplexes
         argsQueue = []
