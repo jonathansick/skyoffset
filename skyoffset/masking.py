@@ -48,7 +48,7 @@ def make_flagmap(output_flag_path, output_weight_path=None,
         # TODO verify regions are polygons in image coordinates
         ww.set_param("POLY_NAMES", region_paths)
         ww.set_param("POLY_OUTFLAGS", 1.)
-        ww.set_param("POLY_OUTWEIGHT", 0.)
+        ww.set_param("POLY_OUTWEIGHTS", 0.)
     ww.run()
     return ww.output_flag_path, ww.output_weight_path
 
