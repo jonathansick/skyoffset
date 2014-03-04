@@ -5,6 +5,7 @@ Apply polygon flag regions and images to blank out weightmaps and generate flag
 regions.
 """
 import subprocess
+import numpy as np
 import astropy.io.fits
 
 
@@ -50,6 +51,19 @@ def make_flagmap(output_flag_path, output_weight_path=None,
         ww.set_param("POLY_OUTWEIGHT", 0.)
     ww.run()
     return ww.output_flag_path, ww.output_weight_path
+
+
+def flag_pixels(image_path, flag_path, ext=0):
+    """Sets flagged pixels in ``flag_path`` to NaN in FITS at ``image_path``.
+
+    .. todo:: Use ``memmap`` for large images.
+    """
+    imfits = astropy.io.fits.open(image_path, mode='update')
+    flagfits = astropy.io.fits.open(flag_path)
+    imfits[ext].data[flagfits[ext].data > 0] = np.nan
+    imfits.flush()
+    imfits.close()
+    flagfits.close()
 
 
 def convert_region(image_path, region_path, workdir):
