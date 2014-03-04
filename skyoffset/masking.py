@@ -8,7 +8,7 @@ import subprocess
 import astropy.io.fits
 
 
-def make_flagmap(image_path, output_flag_path, output_weight_path=None,
+def make_flagmap(output_flag_path, output_weight_path=None,
         weight_path=None, flag_path=None, region_paths=None,
         min_weight=0.3, max_weight=None):
     """Generate a flagmap of bad pixel values, where 1=bad, 0=good. Merges
@@ -16,9 +16,6 @@ def make_flagmap(image_path, output_flag_path, output_weight_path=None,
 
     Parameters
     ----------
-
-    image_path : str
-        Path to the original image.
     output_flag_path : str
         Path to the output flagmap.
     output_weight_path : str
