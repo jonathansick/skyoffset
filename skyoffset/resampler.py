@@ -136,7 +136,7 @@ class MosaicResampler(object):
             doc['_id'] = mosaic_name
             doc['source_image_path'] = base_doc['image_path']
             doc['image_path'] = resamp_path
-            if weight_paths:
+            if weight_paths is not None:
                 doc['weight_path'] = resampled_weight_paths[i]
             # if noise_paths:
             #     doc['noise_path'] = resampled_noise_paths[i]
@@ -147,7 +147,8 @@ class MosaicResampler(object):
             # Resample the noise frame now, if it exists
             if noise_paths[i] is not None:
                 resamp_noise_path = self._resample_noise(set_name,
-                    swarp_configs, [resamp_path], [doc['weight_path']],
+                    swarp_configs, [resamp_path],
+                    [resampled_weight_paths[i]],
                     [noise_paths[i]])[0]
                 doc['noise_path'] = resamp_noise_path
             if self.mosaicdb:
@@ -193,7 +194,7 @@ class MosaicResampler(object):
         resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
         # Trim the resampled images to ensure NAXISi and CRPIXi match
         rimage_paths.extend([d['0'] for d in resamp_paths])
-        rweight_paths.extend([d['0'] for d in resamp_paths])
+        rweight_paths.extend([d['0'] for d in resamp_wpaths])
         self._resize_resampled_images(self._target_fits, rimage_paths)
         self._resize_resampled_images(self._target_fits, rweight_paths)
 
@@ -301,15 +302,17 @@ class MosaicResampler(object):
                 + "_var.fits"
             f = astropy.io.fits.open(noise_path)
             f[0].data = f[0].data ** 2.
-            f.write(var_path, clobber=True)
+            f.writeto(var_path, clobber=True)
             f.close()
             var_paths.append(var_path)
 
         # Need to swarp individually since we need to match the resampled imgs
         for image_path, weight_path, var_path in zip(image_paths, weight_paths,
                 var_paths):
+            print "var_path", var_path
+            print "weight_path", weight_path
             swarp = moastro.astromatic.Swarp([var_path], set_name,
-                weightPaths=[weight_path],
+                # weightPaths=[weight_path],
                 configs=swarp_configs,
                 workDir=self.workdir)
             swarp.set_target_fits(image_path)
@@ -317,15 +320,18 @@ class MosaicResampler(object):
             resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
             resamp_varsum_path = resamp_paths[0]['0']
             resamp_varsum_wpath = resamp_wpaths[0]['0']
+            print "resamp_varsum_path", resamp_varsum_path
+            print "resamp_varsum_wpath", resamp_varsum_wpath
             os.remove(resamp_varsum_wpath)
             # Convert variance to sigma map
             fits = astropy.io.fits.open(resamp_varsum_path)
             fits[0].data = np.sqrt(fits[0].data)
             rnoisepath = os.path.splitext(image_path)[0] + ".noise.fits"
-            fits.writeto(rnoisepath)
+            fits.writeto(rnoisepath, clobber=True)
             resamp_noise_paths.append(rnoisepath)
 
         for p in var_paths:
             os.remove(p)
 
+        self._resize_resampled_images(self._target_fits, resamp_noise_paths)
         return resamp_noise_paths
