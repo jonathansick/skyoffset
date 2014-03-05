@@ -259,25 +259,29 @@ class MosaicResampler(object):
             crpix2 = fits[0].header['CRPIX2']
             if rCRPIX2 > crpix2:
                 # Pad from bottom (low index in image array)
+                print "pad from bottom"
                 dx = rCRPIX2 - crpix2
                 pad = np.ones((dx, image.shape[1])) * np.nan
                 image = np.vstack((pad, image))
                 touched = True
             elif rCRPIX2 < crpix2:
                 # Trim from bottom (low index in image array)
+                print "trim from bottom"
                 dx = crpix2 - rCRPIX2
                 image = image[dx:, :]
                 touched = True
             if rNAXIS2 > image.shape[0]:
-                # Trim from top (high index in image array)
-                dx = rNAXIS2 - image.shape[0]
-                image = image[:-dx, :]
-                touched = True
-            elif rNAXIS2 < image.shape[0]:
                 # Pad from top (high index in image array)
-                dx = crpix2 - rCRPIX2
+                print "pad from top"
+                dx = rNAXIS2 - image.shape[0]
                 pad = np.ones((dx, image.shape[1])) * np.nan
                 image = np.vstack((image, pad))
+                touched = True
+            elif rNAXIS2 < image.shape[0]:
+                # Trim from top (high index in image array)
+                print "trim from top"
+                dx = rNAXIS2 - image.shape[0]
+                image = image[:-dx, :]
                 touched = True
 
             if touched:
