@@ -172,8 +172,12 @@ class ScalarMosaicFactory(object):
 
         offsets = solver.find_best_offsets()
 
+        # Estimate uncertainty in the zeropoint of the sky offsets
+        zp_sigma = self._compute_offset_zp_sigma(offsets)
+
         self.mosaicdb.c.update({"_id": mosaicName},
                 {"$set": {"offsets": offsets,
+                    "offset_zp_sigma": zp_sigma,
                     "solver_cname": mosaicName,
                     "solver_dbname": solverDBName}})
         return solver
@@ -190,6 +194,15 @@ class ScalarMosaicFactory(object):
         header = blockmosaic.make_block_mosaic_header(blockDocs, "test_frame",
                 workDir)
         self.mosaicdb.add_footprint_from_header(self.mosaic_name, header)
+
+    def _compute_offset_zp_sigma(self, offsets):
+        """The offsets have a net zeropoint uncertainty due to the assumption
+        that the net offset should be zero (i.e. error of the mean).
+        """
+        delta = np.array([offsets[k] for k in offsets])
+        n_blocks = len(offsets)
+        sigma = delta.std() / np.sqrt(float(n_blocks))
+        return float(sigma)
 
     def make_mosaic(self, block_selector=None, target_fits=None):
         """Swarp a mosaic using the optimal sky offsets.
