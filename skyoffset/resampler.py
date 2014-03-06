@@ -133,6 +133,7 @@ class MosaicResampler(object):
                 zip(mosaic_ids, mosaic_docs, resampled_image_paths)):
             mosaic_name = doc['_id'] + "_%s" % set_name
             doc = dict(base_doc)
+            orig_pix_scale = base_doc['pix_scale']
             doc['_id'] = mosaic_name
             doc['source_image_path'] = base_doc['image_path']
             doc['image_path'] = resamp_path
@@ -142,6 +143,10 @@ class MosaicResampler(object):
             #     doc['noise_path'] = resampled_noise_paths[i]
             doc['set_name'] = set_name
             doc['pix_scale'] = pix_scale
+            doc['offsets'] = self._rescale_offsets(doc['offsets'],
+                orig_pix_scale, pix_scale)
+            doc['offset_zp_sigma'] = self._rescale_offset_zp_sigma(
+                doc['offset_zp_sigma'], orig_pix_scale, pix_scale)
             if 'couplings' in doc:
                 del doc['couplings']
             # Resample the noise frame now, if it exists
@@ -294,6 +299,20 @@ class MosaicResampler(object):
             fits.close()
 
         target_fits.close()
+
+    def _rescale_offsets(self, offsets, orig_pixscale, new_pixscale):
+        """Scale the sky offset dictionary according to astrometric scaling."""
+        scale_factor = new_pixscale ** 2. / orig_pixscale ** 2.
+        scaled_offsets = {k: v * scale_factor for k, v in offsets.iteritems()}
+        return scaled_offsets
+
+    def _rescale_offset_zp_sigma(self, offset_zp_scale, orig_pixscale,
+            new_pixscale):
+        """Scale the sky offset zp uncertainty according to astrometric
+        scaling.
+        """
+        scale_factor = new_pixscale ** 2. / orig_pixscale ** 2.
+        return offset_zp_scale * scale_factor
 
     def _resample_noise(self, set_name, swarp_configs, image_paths,
             weight_paths, noise_paths):
