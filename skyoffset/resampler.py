@@ -52,7 +52,7 @@ class MosaicResampler(object):
             self._mosaic_docs.append(doc)
 
     def add_images_by_path(self, image_paths, weight_paths=None,
-            noise_paths=None):
+            noise_paths=None, flag_paths=None):
         """Rather than adding adding mosaics from a MosaicDB, directly add
         images from a list of paths.
         
@@ -64,6 +64,9 @@ class MosaicResampler(object):
             Optional list of FITS weight paths.
         noise_paths : list
             Optional list of FITS noise paths.
+        flag_paths : list
+            Optional list of FITS flag paths, where 0 is a permitted pixel,
+            and pixels > 1 are set to NaN prior to resampling.
         """
         for i, image_path in enumerate(image_paths):
             doc = {'image_path': image_path,
@@ -72,6 +75,8 @@ class MosaicResampler(object):
                 doc['weight_path'] = weight_paths[i]
             if noise_paths:
                 doc['noise_path'] = noise_paths[i]
+            if flag_paths:
+                doc['flag_path'] = flag_paths[i]
             self._mosaic_docs.append(doc)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
@@ -107,16 +112,28 @@ class MosaicResampler(object):
         swarp_configs['PIXELSCALE_TYPE'] = 'MANUAL'
         swarp_configs['RESAMPLE_DIR'] = self.workdir
         swarp_configs['SUBTRACT_BACK'] = 'N'
+
+        # Make lists of input images
         mosaic_docs = []
         mosaic_ids = []
         image_paths = []
         weight_paths = []
         noise_paths = []
         resamp_docs = []
+        temp_image_paths = []  # for flagged images
         for doc in self._mosaic_docs:
             mosaic_docs.append(doc)
             mosaic_ids.append(doc['_id'])
-            image_paths.append(doc['image_path'])
+            if 'flag_path' in doc:
+                # set flagged pixels to nan before resampling
+                tmp_im_path = os.path.join(self.workdir,
+                        doc['_id'] + ".flagged.fits")
+                self._set_flagged_nans(doc['image_path'], doc['flag_path'],
+                        tmp_im_path)
+                temp_image_paths.append(tmp_im_path)
+                image_paths.append(tmp_im_path)
+            else:
+                image_paths.append(doc['image_path'])
             if weight_paths is not None and 'weight_path' in doc:
                 weight_paths.append(doc['weight_path'])
             else:
@@ -125,10 +142,12 @@ class MosaicResampler(object):
                 noise_paths.append(doc['noise_path'])
             else:
                 noise_paths.append(None)
+
         # Resample images and weight paths
         resampled_image_paths, resampled_weight_paths = self._resample_images(
             set_name, swarp_configs,
             image_paths, weight_paths)
+
         for i, (mosaic_id, base_doc, resamp_path) in enumerate(
                 zip(mosaic_ids, mosaic_docs, resampled_image_paths)):
             mosaic_name = doc['_id'] + "_%s" % set_name
@@ -139,8 +158,6 @@ class MosaicResampler(object):
             doc['image_path'] = resamp_path
             if weight_paths is not None:
                 doc['weight_path'] = resampled_weight_paths[i]
-            # if noise_paths:
-            #     doc['noise_path'] = resampled_noise_paths[i]
             doc['set_name'] = set_name
             doc['pix_scale'] = pix_scale
             doc['offsets'] = self._rescale_offsets(doc['offsets'],
@@ -162,8 +179,23 @@ class MosaicResampler(object):
                     astropy.io.fits.getheader(resamp_path, 0))
             else:
                 resamp_docs.append(doc)
+
+        for path in temp_image_paths:
+            if os.path.exists(path):
+                os.remove(path)
+
         if resamp_docs:
             return resamp_docs
+
+    def _set_flagged_nans(self, image_path, flag_path, output_path):
+        """Create a version of a FITS image where flagged pixel are set to NaN.
+        """
+        f = astropy.io.fits.open(image_path)
+        flagfits = astropy.io.fits.open(flag_path)
+        f[0].data[flagfits[0].data > 0] = np.nan
+        f.writeto(output_path, clobber=True)
+        f.close()
+        flagfits.close()
 
     def _resample_images(self, set_name, swarp_configs, image_paths,
             weight_paths):
