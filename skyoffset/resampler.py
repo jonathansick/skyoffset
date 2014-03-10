@@ -52,7 +52,7 @@ class MosaicResampler(object):
             self._mosaic_docs.append(doc)
 
     def add_images_by_path(self, image_paths, weight_paths=None,
-            noise_paths=None, flag_paths=None):
+            noise_paths=None, flag_paths=None, offset_zp_sigmas=None):
         """Rather than adding adding mosaics from a MosaicDB, directly add
         images from a list of paths.
         
@@ -67,6 +67,10 @@ class MosaicResampler(object):
         flag_paths : list
             Optional list of FITS flag paths, where 0 is a permitted pixel,
             and pixels > 1 are set to NaN prior to resampling.
+        offset_zp_sigmas : list
+            Optional list of sky background uncertainties to be propagated
+            into the document keyword `'offset_zp_sigma'` (in image pixel
+            units).
         """
         for i, image_path in enumerate(image_paths):
             doc = {'image_path': image_path,
@@ -77,6 +81,11 @@ class MosaicResampler(object):
                 doc['noise_path'] = noise_paths[i]
             if flag_paths:
                 doc['flag_path'] = flag_paths[i]
+            if offset_zp_sigmas:
+                doc['offset_zp_sigma'] = offset_zp_sigmas[i]
+            header = astropy.io.fits.getheader(image_path, 0)
+            pix_scale = np.fabs(header['CD1_1'] * 3600.)
+            doc['pix_scale'] = pix_scale
             self._mosaic_docs.append(doc)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
