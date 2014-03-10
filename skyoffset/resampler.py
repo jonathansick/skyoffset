@@ -169,10 +169,12 @@ class MosaicResampler(object):
                 doc['weight_path'] = resampled_weight_paths[i]
             doc['set_name'] = set_name
             doc['pix_scale'] = pix_scale
-            doc['offsets'] = self._rescale_offsets(doc['offsets'],
-                orig_pix_scale, pix_scale)
-            doc['offset_zp_sigma'] = self._rescale_offset_zp_sigma(
-                doc['offset_zp_sigma'], orig_pix_scale, pix_scale)
+            if 'offsets' in doc:
+                doc['offsets'] = self._rescale_offsets(doc['offsets'],
+                    orig_pix_scale, pix_scale)
+            if 'offset_zp_sigma' in doc:
+                doc['offset_zp_sigma'] = self._rescale_offset_zp_sigma(
+                    doc['offset_zp_sigma'], orig_pix_scale, pix_scale)
             if 'couplings' in doc:
                 del doc['couplings']
             # Resample the noise frame now, if it exists
