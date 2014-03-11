@@ -84,7 +84,8 @@ class MosaicResampler(object):
             if offset_zp_sigmas:
                 doc['offset_zp_sigma'] = offset_zp_sigmas[i]
             header = astropy.io.fits.getheader(image_path, 0)
-            pix_scale = np.fabs(header['CD1_1'] * 3600.)
+            pix_scale = np.sqrt(header['CD1_1'] ** 2.
+                    + header['CD1_2'] ** 2.) * 3600.
             doc['pix_scale'] = pix_scale
             self._mosaic_docs.append(doc)
 
