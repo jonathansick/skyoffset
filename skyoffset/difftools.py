@@ -295,6 +295,8 @@ class Couplings(object):
         self.fieldDiffSigmas = {}
         self.fieldDiffAreas = {}
         self.fieldLevels = {}
+        self.coverage_fractions = {}
+        self.diff_paths = {}
     
     def __getitem__(self, fieldname):
         """:return: list of fields that are coupled to the named field."""
@@ -311,6 +313,7 @@ class Couplings(object):
         areas = {}
         levels = {}
         coverage_fractions = {}
+        diff_paths = {}
         for pair, diff in self.fieldDiffs.iteritems():
             diffs["*".join(pair)] = float(diff)
         for pair, sigma in self.fieldDiffSigmas.iteritems():
@@ -321,12 +324,15 @@ class Couplings(object):
             levels["*".join(pair)] = float(level)
         for pair, f in self.coverage_fractions.iteritems():
             coverage_fractions["*".join(pair)] = float(f)
+        for pair, p in self.diff_paths.iteritems():
+            diff_paths["*".join(pair)] = float(p)
         doc = {"fields": self.fields,
             "diffs": diffs,
             "sigmas": sigmas,
             "areas": areas,
             "levels": levels,
-            "coverage_fractions": coverage_fractions}
+            "coverage_fractions": coverage_fractions,
+            "diff_paths": diff_paths}
         return doc
 
     @classmethod
@@ -343,6 +349,7 @@ class Couplings(object):
         instance.fieldDiffAreas = {}
         instance.fieldLevels = {}
         instance.coverage_fractions = {}
+        instance.diff_paths = {}
         for fieldPair, subDoc in doc['diffs'].iteritems():
             fieldTuple = tuple(fieldPair.split("*"))
             instance.fieldDiffs[fieldTuple] = subDoc
@@ -358,6 +365,9 @@ class Couplings(object):
         for fieldPair, subDoc in doc['coverage_fractions'].iteritems():
             fieldTuple = tuple(fieldPair.split("*"))
             instance.coverage_fractions[fieldTuple] = subDoc
+        for fieldPair, subDoc in doc['diff_paths'].iteritems():
+            fieldTuple = tuple(fieldPair.split("*"))
+            instance.diff_paths[fieldTuple] = subDoc
         return instance
 
     def save(self, path):
@@ -375,6 +385,7 @@ class Couplings(object):
         p.dump(self.fieldDiffAreas)
         p.dump(self.fieldLevels)
         p.dump(self.coverage_fractions)
+        p.dump(self.diff_paths)
         f.close()
     
     @classmethod
@@ -392,6 +403,7 @@ class Couplings(object):
         instance.fieldDiffAreas = p.load()
         instance.fieldLevels = p.load()
         instance.coverage_fractions = p.load()
+        instance.diff_paths = p.load()
         f.close()
         
         instance._trim_diffs_to_fields()
@@ -411,6 +423,7 @@ class Couplings(object):
                 del self.fieldDiffAreas[pairKey]
                 del self.fieldLevels[pairKey]
                 del self.coverage_fractions[pairKey]
+                del self.diff_paths[pairKey]
     
     def get_overlap_db(self):
         return self.overlapDB
@@ -478,6 +491,7 @@ class Couplings(object):
         diffAreas = {}
         meanLevels = {}
         coverage_fractions = {}
+        diff_paths = {}
         for result in results:
             field1, field2, offsetData = result
             pairKey = (field1, field2)
@@ -487,6 +501,7 @@ class Couplings(object):
                 diffAreas[pairKey] = offsetData['area']
                 meanLevels[pairKey] = offsetData['level']
                 coverage_fractions[pairKey] = offsetData['coverage_frac']
+                diff_paths[pairKey] = offsetData['diff_path']
             else:
                 # self.overlaps.rejectOverlap(pairKey)
                 pass
@@ -495,6 +510,7 @@ class Couplings(object):
         self.fieldDiffAreas = diffAreas
         self.fieldLevels = meanLevels
         self.coverage_fractions = coverage_fractions
+        self.diff_paths = diff_paths
         pool.close()
         pool.join()
     
@@ -608,10 +624,12 @@ def _computeDiff(arg):
             print "lower_lim, upper_lim", lower_lim, upper_lim
             image[image < lower_lim] = np.nan
             image[image > upper_lim] = np.nan
-            path = os.path.join(diffDir, "%s_%s.fits" % (upperKey, lowerKey))
+            path = os.path.join(diffDir, "%s*%s.fits" % (upperKey, lowerKey))
             astropy.io.fits.writeto(path, image, clobber=True)
     else:
         offsetData = None
+        path = None
+    offsetData['diff_path'] = path
     return upperKey, lowerKey, offsetData
 
 
