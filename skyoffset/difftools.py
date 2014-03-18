@@ -310,6 +310,7 @@ class Couplings(object):
         sigmas = {}
         areas = {}
         levels = {}
+        coverage_fractions = {}
         for pair, diff in self.fieldDiffs.iteritems():
             diffs["*".join(pair)] = float(diff)
         for pair, sigma in self.fieldDiffSigmas.iteritems():
@@ -318,11 +319,14 @@ class Couplings(object):
             areas["*".join(pair)] = float(area)
         for pair, level in self.fieldLevels.iteritems():
             levels["*".join(pair)] = float(level)
+        for pair, f in self.coverage_fractions.iteritems():
+            coverage_fractions["*".join(pair)] = float(f)
         doc = {"fields": self.fields,
             "diffs": diffs,
             "sigmas": sigmas,
             "areas": areas,
-            "levels": levels}
+            "levels": levels,
+            "coverage_fractions": coverage_fractions}
         return doc
 
     @classmethod
@@ -338,6 +342,7 @@ class Couplings(object):
         instance.fieldDiffSigmas = {}
         instance.fieldDiffAreas = {}
         instance.fieldLevels = {}
+        instance.coverage_fractions = {}
         for fieldPair, subDoc in doc['diffs'].iteritems():
             fieldTuple = tuple(fieldPair.split("*"))
             instance.fieldDiffs[fieldTuple] = subDoc
@@ -350,6 +355,9 @@ class Couplings(object):
         for fieldPair, subDoc in doc['levels'].iteritems():
             fieldTuple = tuple(fieldPair.split("*"))
             instance.fieldLevels[fieldTuple] = subDoc
+        for fieldPair, subDoc in doc['coverage_fractions'].iteritems():
+            fieldTuple = tuple(fieldPair.split("*"))
+            instance.coverage_fractions[fieldTuple] = subDoc
         return instance
 
     def save(self, path):
@@ -366,6 +374,7 @@ class Couplings(object):
         p.dump(self.fieldDiffSigmas)
         p.dump(self.fieldDiffAreas)
         p.dump(self.fieldLevels)
+        p.dump(self.coverage_fractions)
         f.close()
     
     @classmethod
@@ -382,6 +391,7 @@ class Couplings(object):
         instance.fieldDiffSigmas = p.load()
         instance.fieldDiffAreas = p.load()
         instance.fieldLevels = p.load()
+        instance.coverage_fractions = p.load()
         f.close()
         
         instance._trim_diffs_to_fields()
@@ -400,6 +410,7 @@ class Couplings(object):
                 del self.fieldDiffSigmas[pairKey]
                 del self.fieldDiffAreas[pairKey]
                 del self.fieldLevels[pairKey]
+                del self.coverage_fractions[pairKey]
     
     def get_overlap_db(self):
         return self.overlapDB
@@ -466,6 +477,7 @@ class Couplings(object):
         diffSigmas = {}
         diffAreas = {}
         meanLevels = {}
+        coverage_fractions = {}
         for result in results:
             field1, field2, offsetData = result
             pairKey = (field1, field2)
@@ -474,6 +486,7 @@ class Couplings(object):
                 diffSigmas[pairKey] = offsetData['sigma']
                 diffAreas[pairKey] = offsetData['area']
                 meanLevels[pairKey] = offsetData['level']
+                coverage_fractions[pairKey] = offsetData['coverage_frac']
             else:
                 # self.overlaps.rejectOverlap(pairKey)
                 pass
@@ -481,6 +494,7 @@ class Couplings(object):
         self.fieldDiffSigmas = diffSigmas
         self.fieldDiffAreas = diffAreas
         self.fieldLevels = meanLevels
+        self.coverage_fractions = coverage_fractions
         pool.close()
         pool.join()
     
@@ -575,11 +589,13 @@ def _computeDiff(arg):
         median = np.median(clipped[~clipped.mask])
         sigma = np.nanstd(clipped[~clipped.mask])
         n_clipped_pixels = len(clipped[~clipped.mask])
+        cov_frac = float(n_clipped_pixels) / len(diff_pixels.ravel())
         print "Offset %.2e +/- %.2e" % (median, sigma)
         offsetData = {"mean": median,
                       "sigma": sigma,
                       "area": n_clipped_pixels,
-                      "level": median}
+                      "level": median,
+                      "coverage_frac": cov_frac}
         
         # Save the difference image, if possible
         if diffDir is not None:
@@ -758,8 +774,8 @@ class CoupledPlanes(object):
         if nProcesses is None:
             nProcesses = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(processes=nProcesses)
-        # results = pool.map(_computeDiffPlane, args)
-        results = map(_computeDiffPlane, args)
+        results = pool.map(_computeDiffPlane, args)
+        # results = map(_computeDiffPlane, args)
         
         self.diffPlanes = {}
         self.diffAreas = {}
