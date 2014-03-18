@@ -4,11 +4,10 @@ import cPickle
 import numpy as np
 import scipy.stats
 import astropy.io.fits
+from astropy.stats.funcs import sigma_clip
 import Polygon
 import Polygon.Utils
 import multiprocessing
-
-from scipy.stats import nanmean
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -457,11 +456,12 @@ class Couplings(object):
             field2Path = self.fields[field2]['image_path']
             field2WeightPath = self.fields[field2]['weight_path']
             arg = (field1, field1Path, field1WeightPath, field2, field2Path,
-                    field2WeightPath, overlap, diffImageDir, plotDir)
+                    field2WeightPath, overlap, diffImageDir, plotDir,
+                    2.5)
             args.append(arg)
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
         results = pool.map(_computeDiff, args)
-        #results = map(_computeDiff, args)
+        # results = map(_computeDiff, args)
         diffs = {}
         diffSigmas = {}
         diffAreas = {}
@@ -558,60 +558,42 @@ class Couplings(object):
 def _computeDiff(arg):
     """Worker: Computes the DC offset of frame-coadd"""
     upperKey, upperPath, upperWeightPath, lowerKey, lowerPath, \
-            lowerWeightPath, overlap, diffDir, diffPlotDir = arg
+            lowerWeightPath, overlap, diffDir, diffPlotDir, nsigma = arg
     upper = SliceableImage.makeFromFITS(upperKey, upperPath, upperWeightPath)
     upper.setRange(overlap.upSlice)
     lower = SliceableImage.makeFromFITS(lowerKey, lowerPath, lowerWeightPath)
     lower.setRange(overlap.loSlice)
-    # goodPix = np.where(upper.getGoodPix() & lower.getGoodPix())
     goodPix = np.where((upper.weight > 0.) & (lower.weight > 0.))
-    # badPix = np.where((upper.weight==0.) | (lower.weight==0.))
     nPixels = len(goodPix[0])
-    print "Compute diff, nPixels:", nPixels
-    print upper.image.shape
-    print lower.image.shape
-    print upper.weight
-    print upper.image.min(), upper.image.max()
-    print lower.image.min(), lower.image.max(), lower.image.mean()
-    
-    nSigma = 1  # the sigma clipping limit above and below the orignal median.
     
     if nPixels > 10:
         # Offset via difference image
-        diffPixels = upper.image[goodPix] - lower.image[goodPix]
-        meanPixels = (upper.image[goodPix] + lower.image[goodPix]) / 2.
-        diffPixelsMean = diffPixels.mean()
-        diffPixelsSigma = diffPixels.std()
-        
-        # Re-compute mask using the sigma-clipping
-        lowerLim = diffPixelsMean - nSigma * diffPixelsSigma
-        upperLim = diffPixelsMean + nSigma * diffPixelsSigma
-        diffImage = upper.image - lower.image
-        goodPix = np.where((upper.weight > 0.) & (lower.weight > 0.)
-            & (diffImage > lowerLim) & (diffImage < upperLim))
-        goodImagePixels = diffImage[goodPix].ravel()
-        nClippedPixels = goodImagePixels.shape[0]
-        # break if insufficient pixels after clipping
-        if nClippedPixels < 10000:
-            return upperKey, lowerKey, None
-        clippedMedian = np.median(goodImagePixels)
-        
-        sigma = diffImage[goodPix].std()
-        nPixels = len(goodPix[0])
-        print "%.2e vs %.2e" % (diffPixelsSigma, sigma)
-        offsetData = {"mean": clippedMedian,  # diffPixelsMean,
-                      "sigma": sigma,  # diffPixelsSigma,
-                      "area": nClippedPixels,
-                      "level": nanmean(meanPixels)}
+        diff_pixels = upper.image[goodPix] - lower.image[goodPix]
+        # Choose iters=None so clipping until convergence.
+        clipped = sigma_clip(diff_pixels, sig=nsigma, iters=None,
+                varfunc=np.nanvar)
+        median = np.median(clipped[~clipped.mask])
+        sigma = np.nanstd(clipped[~clipped.mask])
+        n_clipped_pixels = len(clipped[~clipped.mask])
+        print "Offset %.2e +/- %.2e" % (median, sigma)
+        offsetData = {"mean": median,
+                      "sigma": sigma,
+                      "area": n_clipped_pixels,
+                      "level": median}
         
         # Save the difference image, if possible
         if diffDir is not None:
-            badPix = np.where((upper.weight == 0.) | (lower.weight == 0.))
-            diffImage[badPix] = np.nan
-            diffImage[diffImage < lowerLim] = np.nan
-            diffImage[diffImage > upperLim] = np.nan
+            image = upper.image - lower.image
+            print "image median", np.median(image)
+            bad_pix = np.where((upper.weight == 0.) | (lower.weight == 0.))
+            image[bad_pix] = np.nan
+            lower_lim = median - nsigma * sigma
+            upper_lim = median + nsigma * sigma
+            print "lower_lim, upper_lim", lower_lim, upper_lim
+            image[image < lower_lim] = np.nan
+            image[image > upper_lim] = np.nan
             path = os.path.join(diffDir, "%s_%s.fits" % (upperKey, lowerKey))
-            astropy.io.fits.writeto(path, diffImage, clobber=True)
+            astropy.io.fits.writeto(path, image, clobber=True)
     else:
         offsetData = None
     return upperKey, lowerKey, offsetData
@@ -776,8 +758,8 @@ class CoupledPlanes(object):
         if nProcesses is None:
             nProcesses = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(processes=nProcesses)
-        results = pool.map(_computeDiffPlane, args)
-        # results = map(_computeDiffPlane, args)
+        # results = pool.map(_computeDiffPlane, args)
+        results = map(_computeDiffPlane, args)
         
         self.diffPlanes = {}
         self.diffAreas = {}
