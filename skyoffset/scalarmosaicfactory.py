@@ -53,7 +53,7 @@ class ScalarMosaicFactory(object):
     
     def solve_offsets(self, solver_dbname, solver_cname,
             n_runs=1000, dbmeta=None,
-            reset_couplings=False, fresh_start=True,
+            reset_couplings=False, fresh_start=True, mp_diffs=True,
             init_scale=5., restart_scale=2.):
         """Pipeline for solving the scalar sky offsets between a set of
         blocks.
@@ -80,6 +80,8 @@ class ScalarMosaicFactory(object):
         reset_couplings : bool
             If ``True``, then the couplings (differences) between blocks
             will be recomputed.
+        mp_diffs : bool
+            If `True`, then image differences are computed in parallel.
         fresh_start : bool
             If ``True``, then previous optimization runs for this mosaic
             will be deleted from the sky offset solver MongoDB collection.
@@ -95,7 +97,7 @@ class ScalarMosaicFactory(object):
         
         # Make couplings
         if 'couplings' not in mosaic_doc or reset_couplings:
-            couplings = self._make_couplings(block_docs)
+            couplings = self._make_couplings(block_docs, mp=mp_diffs)
         else:
             couplings = self._reload_couplings(mosaic_doc['couplings'])
         
@@ -124,7 +126,7 @@ class ScalarMosaicFactory(object):
         persisted document."""
         return Couplings.load_doc(couplings_doc)
     
-    def _make_couplings(self, block_docs):
+    def _make_couplings(self, block_docs, mp=True):
         """Computes the couplings between block_docs.
         :return: a difftools.Couplings instance.
         """
@@ -134,7 +136,7 @@ class ScalarMosaicFactory(object):
             blockWeightPath = block_doc['weight_path']
             couplings.add_field(block_name, blockPath, blockWeightPath)
         diffImageDir = os.path.join(self.workdir, "diffs")
-        couplings.make(diffImageDir)
+        couplings.make(diffImageDir, mp=mp)
         couplings_doc = couplings.get_doc()
         self.mosaicdb.c.update({"_id": self.mosaic_name},
                 {"$set": {"couplings": couplings_doc}})

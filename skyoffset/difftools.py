@@ -435,12 +435,19 @@ class Couplings(object):
         self.fields[name] = {'image_path': imagePath,
                 'weight_path': weightPath}
     
-    def make(self, diffDir, plotDir=None):
+    def make(self, diffDir, mp=True, plotDir=None):
         """Compute coupled image differences, using `diffDir` as a working
         directory for the image differencing.
+
+        Parameters
+        ----------
+        diffDir : str
+            Directory where difference images are saved.
+        mp : bool
+            If True, then difference images are computed in parallel.
         """
         self._find_overlaps()
-        self._compute_overlap_diffs(diffDir, plotDir=plotDir)
+        self._compute_overlap_diffs(diffDir, mp=mp, plotDir=plotDir)
 
     def _find_overlaps(self):
         """Given the fields, detects and records all overlaps between fields.
@@ -457,7 +464,7 @@ class Couplings(object):
         resampledWCS = ResampledWCS(astropy.io.fits.getheader(imagePath, 0))
         return resampledWCS
         
-    def _compute_overlap_diffs(self, diffImageDir, plotDir=None):
+    def _compute_overlap_diffs(self, diffImageDir, mp=True, plotDir=None):
         """Compute the scalar offsets between fields in each overlap.
         
         This is done with multiprocessing, so that overlaps are computed in
@@ -484,8 +491,10 @@ class Couplings(object):
                     2.5)
             args.append(arg)
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
-        results = pool.map(_computeDiff, args)
-        # results = map(_computeDiff, args)
+        if mp:
+            results = pool.map(_computeDiff, args)
+        else:
+            results = map(_computeDiff, args)
         diffs = {}
         diffSigmas = {}
         diffAreas = {}
