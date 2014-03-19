@@ -52,7 +52,7 @@ class ScalarMosaicFactory(object):
             self._swarp_configs = {}
     
     def solve_offsets(self, solver_dbname, solver_cname,
-            n_runs=1000, dbmeta=None,
+            n_runs=1000, dbmeta=None, block_mask_key=None,
             reset_couplings=False, fresh_start=True, mp_diffs=True,
             init_scale=5., restart_scale=2.):
         """Pipeline for solving the scalar sky offsets between a set of
@@ -66,6 +66,9 @@ class ScalarMosaicFactory(object):
         solver_cname : str
             Name of the MongoDB collection where results from sky offset
             optimization are persisted.
+        block_mask_key : str
+            Optional BlockDB key giving paths for masks for each block to mask
+            from the difference computation.
         n_runs : int
             Number of optimizations to start; the sky offsets from the best
             optimization run are chosen.
@@ -97,7 +100,9 @@ class ScalarMosaicFactory(object):
         
         # Make couplings
         if 'couplings' not in mosaic_doc or reset_couplings:
-            couplings = self._make_couplings(block_docs, mp=mp_diffs)
+            couplings = self._make_couplings(block_docs,
+                    block_mask_key=block_mask_key,
+                    mp=mp_diffs)
         else:
             couplings = self._reload_couplings(mosaic_doc['couplings'])
         
@@ -126,7 +131,7 @@ class ScalarMosaicFactory(object):
         persisted document."""
         return Couplings.load_doc(couplings_doc)
     
-    def _make_couplings(self, block_docs, mp=True):
+    def _make_couplings(self, block_docs, block_mask_key=None, mp=True):
         """Computes the couplings between block_docs.
         :return: a difftools.Couplings instance.
         """
@@ -134,7 +139,12 @@ class ScalarMosaicFactory(object):
         for block_name, block_doc in block_docs.iteritems():
             blockPath = block_doc['image_path']
             blockWeightPath = block_doc['weight_path']
-            couplings.add_field(block_name, blockPath, blockWeightPath)
+            if block_mask_key and block_mask_key in block_doc:
+                mask_path = block_doc[block_mask_key]
+            else:
+                mask_path = None
+            couplings.add_field(block_name, blockPath, blockWeightPath,
+                    mask_path=mask_path)
         diffImageDir = os.path.join(self.workdir, "diffs")
         couplings.make(diffImageDir, mp=mp)
         couplings_doc = couplings.get_doc()

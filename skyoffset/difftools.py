@@ -15,6 +15,11 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 class SliceableBase(object):
     """Baseclass for dealing with image slices."""
+
+    def _apply_mask(self, image, mask):
+        """Set masked pixels to NaN."""
+        image[mask > 0] = np.nan
+        return image
     
     def getGoodPix(self, fracThreshold=0.5, threshold=None):
         if threshold is None:
@@ -39,23 +44,31 @@ class SliceableImage(SliceableBase):
     """Used by _computeDiff to efficiently slice overlapping images and compare
     their common set of good pixels.
     """
-    def __init__(self, key, image, weight):
+    def __init__(self, key, image, weight, mask=None):
         super(SliceableImage, self).__init__()
         self.key = key
         self.fullImage = image
         self.fullWeight = weight
+        if mask is not None:
+            self.fullImage = self._apply_mask(image, mask)
+            self.fullWeight = self._apply_mask(weight, mask)
         self.r = None
         self.image = None
         self.weight = None
     
     @classmethod
-    def makeFromFITS(cls, key, imagePath, weightPath):
+    def makeFromFITS(cls, key, imagePath, weightPath, mask_path=None):
         """Create a `SliceableImage` from FITS paths"""
+        print imagePath, weightPath, mask_path
         if weightPath is not None:
-            return cls(key, astropy.io.fits.getdata(imagePath, 0),
-                    astropy.io.fits.getdata(weightPath, 0))
+            w = astropy.io.fits.getdata(weightPath, 0)
         else:
-            return cls(key, astropy.io.fits.getdata(imagePath, 0), None)
+            w = None
+        if mask_path is not None:
+            m = astropy.io.fits.getdata(mask_path, 0)
+        else:
+            m = None
+        return cls(key, astropy.io.fits.getdata(imagePath, 0), w, mask=m)
     
     def _slice(self, im):
         return im[self.r[1][0]:self.r[1][1], self.r[0][0]:self.r[0][1]]
@@ -325,7 +338,7 @@ class Couplings(object):
         for pair, f in self.coverage_fractions.iteritems():
             coverage_fractions["*".join(pair)] = float(f)
         for pair, p in self.diff_paths.iteritems():
-            diff_paths["*".join(pair)] = float(p)
+            diff_paths["*".join(pair)] = p
         doc = {"fields": self.fields,
             "diffs": diffs,
             "sigmas": sigmas,
@@ -428,12 +441,13 @@ class Couplings(object):
     def get_overlap_db(self):
         return self.overlapDB
 
-    def add_field(self, name, imagePath, weightPath):
+    def add_field(self, name, imagePath, weightPath, mask_path=None):
         """Adds a field object, which is any object that responds to the field
         specification...
         """
         self.fields[name] = {'image_path': imagePath,
-                'weight_path': weightPath}
+                'weight_path': weightPath,
+                'mask_path': mask_path}
     
     def make(self, diffDir, mp=True, plotDir=None):
         """Compute coupled image differences, using `diffDir` as a working
@@ -484,15 +498,19 @@ class Couplings(object):
             field1, field2 = overlapKey
             field1Path = self.fields[field1]['image_path']
             field1WeightPath = self.fields[field1]['weight_path']
+            field1MaskPath = self.fields[field1]['mask_path']
             field2Path = self.fields[field2]['image_path']
             field2WeightPath = self.fields[field2]['weight_path']
-            arg = (field1, field1Path, field1WeightPath, field2, field2Path,
-                    field2WeightPath, overlap, diffImageDir, plotDir,
-                    2.5)
+            field2MaskPath = self.fields[field2]['mask_path']
+            arg = (field1, field1Path, field1WeightPath, field1MaskPath,
+                    field2, field2Path, field2WeightPath, field2MaskPath,
+                    overlap, diffImageDir, plotDir, 2.5)
             args.append(arg)
-        pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
         if mp:
+            pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
             results = pool.map(_computeDiff, args)
+            pool.close()
+            pool.join()
         else:
             results = map(_computeDiff, args)
         diffs = {}
@@ -520,8 +538,6 @@ class Couplings(object):
         self.fieldLevels = meanLevels
         self.coverage_fractions = coverage_fractions
         self.diff_paths = diff_paths
-        pool.close()
-        pool.join()
     
     def get_field_diffs(self, omittedFields=[], replicatedFields=[]):
         """Returns a dictionary of field differences, and a list of fields
@@ -596,15 +612,18 @@ class Couplings(object):
 
 def _computeDiff(arg):
     """Worker: Computes the DC offset of frame-coadd"""
-    upperKey, upperPath, upperWeightPath, lowerKey, lowerPath, \
-            lowerWeightPath, overlap, diffDir, diffPlotDir, nsigma = arg
-    upper = SliceableImage.makeFromFITS(upperKey, upperPath, upperWeightPath)
+    upperKey, upperPath, upperWeightPath, upperMaskKey, lowerKey, lowerPath, \
+            lowerWeightPath, lowerMaskKey, \
+            overlap, diffDir, diffPlotDir, nsigma = arg
+    upper = SliceableImage.makeFromFITS(upperKey, upperPath, upperWeightPath,
+            mask_path=upperMaskKey)
     upper.setRange(overlap.upSlice)
-    lower = SliceableImage.makeFromFITS(lowerKey, lowerPath, lowerWeightPath)
+    lower = SliceableImage.makeFromFITS(lowerKey, lowerPath, lowerWeightPath,
+            mask_path=lowerMaskKey)
     lower.setRange(overlap.loSlice)
     goodPix = np.where((upper.weight > 0.) & (lower.weight > 0.))
     nPixels = len(goodPix[0])
-    
+    print "diff pair", lowerKey, upperKey, nPixels
     if nPixels > 10:
         # Offset via difference image
         diff_pixels = upper.image[goodPix] - lower.image[goodPix]
@@ -635,10 +654,10 @@ def _computeDiff(arg):
             image[image > upper_lim] = np.nan
             path = os.path.join(diffDir, "%s*%s.fits" % (upperKey, lowerKey))
             astropy.io.fits.writeto(path, image, clobber=True)
+            offsetData['diff_path'] = path
     else:
         offsetData = None
         path = None
-    offsetData['diff_path'] = path
     return upperKey, lowerKey, offsetData
 
 
