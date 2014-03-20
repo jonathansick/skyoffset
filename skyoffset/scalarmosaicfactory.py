@@ -253,6 +253,7 @@ class ScalarMosaicFactory(object):
         mosaic_path, mosaic_weight_path = blockmosaic.block_mosaic(bloc_docs,
                 offsets, self.mosaic_name, self._swarp_configs, self.workdir,
                 target_fits=target_fits,
+                delete_offset_images=True,
                 offset_fcn=offsettools.apply_offset)
 
         self.mosaicdb.c.update({"_id": self.mosaic_name},

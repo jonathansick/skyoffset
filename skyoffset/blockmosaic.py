@@ -20,7 +20,8 @@ import offsettools
 def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
         offset_fcn=offsettools.apply_offset,
         target_fits=None,
-        threads=multiprocessing.cpu_count()):
+        threads=multiprocessing.cpu_count(),
+        delete_offset_images=True):
     """Construct a mosaic by offsetting blocks and swarping."""
     offsetDir = os.path.join(workDir, "offset_images")
     if os.path.exists(offsetDir) is False: os.makedirs(offsetDir)
@@ -60,6 +61,11 @@ def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
         swarp.set_target_fits(target_fits)
     swarp.run()
     blockPath, weightPath = swarp.mosaic_paths()
+
+    if delete_offset_images:
+        for p in imagePathList:
+            os.remove(p)
+
     return blockPath, weightPath
 
 
