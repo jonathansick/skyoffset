@@ -87,10 +87,10 @@ cdef class ScalarObjective:
             # Now we can confidently pack a coupling term for the terms dictionary
             term = {'delta': adjustedPairDiff,
                     'delta_sigma': couplings.fieldDiffSigmas[pairKey],
-                    'delta_area': couplings.fieldDiffSigmas[pairKey],
+                    'delta_area': couplings.fieldDiffAreas[pairKey],
                     'upper_index': upperIndex,
                     'lower_index': lowerIndex,
-                    'weight': 1.}
+                    'weight': 1. / couplings.fieldDiffSigmas[pairKey] ** 2.}
             terms[pairKey] = term
 
         # Repack terms dictionary into numpy arrays
@@ -189,4 +189,3 @@ cdef class ScalarObjective:
         for fieldname, offset in zip(self.members, self.bestOffsets):
             fieldOffsets[fieldname] = offset
         return fieldOffsets
-
