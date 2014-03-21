@@ -30,6 +30,7 @@ import moastro.astromatic
 
 from skyoffset.stackfactory import ChipStacker
 import skyoffset.offsettools as offset_tools
+from skyoffset.noisefactory import NoiseMapFactory
 
 
 class LockedBlockFactory(object):
@@ -73,6 +74,7 @@ class LockedBlockFactory(object):
         else:
             self._swarp_configs = {}
         self.db_meta = db_meta
+        self.noise_path = None
 
     def make_stack(self, stack_name, image_key, weight_key, db_meta=None,
             clean_files=True):
@@ -116,6 +118,7 @@ class LockedBlockFactory(object):
             self.offsets[ik] = offset - net_offset
 
     def make_mosaic(self, image_path_keys, weight_path_keys,
+            noise_path_keys=None,
             threads=multiprocessing.cpu_count(),
             delete_offset_images=True,
             target_fits=None):
@@ -170,6 +173,15 @@ class LockedBlockFactory(object):
         swarp.run()
         block_path, weight_path = swarp.mosaic_paths()
 
+        # Make noisemap if possible
+        noise_paths = []
+        if noise_path_keys is not None:
+            docs = self.imagelog.find(self.image_sel)
+            for doc in docs:
+                for nkey in noise_path_keys:
+                    noise_paths.append(doc[nkey])
+            self._make_noisemap(noise_paths, weight_paths, block_path)
+
         if delete_offset_images:
             for p in offset_paths:
                 if os.path.exists(p):
@@ -184,7 +196,18 @@ class LockedBlockFactory(object):
         doc['weight_path'] = weight_path
         doc['offsets'] = self.offsets
         doc['offset_sigmas'] = self.offset_std
+        if self.noise_path is not None:
+            doc['noise_path'] = self.noise_path
         self.blockdb.c.save(doc)
 
         self.blockdb.add_footprint_from_header(self.block_name,
             astropy.io.fits.getheader(block_path))
+
+    def _make_noisemap(self, noise_paths, weight_paths, mosaic_path):
+        """Make a noise map for this coadd given noisemaps of individual
+        images.
+        """
+        factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
+                swarp_configs=dict(self._swarp_configs),
+                delete_temps=False)
+        self.noise_path = factory.map_path
