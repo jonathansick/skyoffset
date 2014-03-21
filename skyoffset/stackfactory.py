@@ -5,8 +5,10 @@ Make stacks from a set of chip images.
 """
 import os
 import multiprocessing
+
+import numpy as np
 import astropy.io.fits
-import numpy
+from astropy.stats.funcs import sigma_clip
 
 from moastro.astromatic import Swarp
 
@@ -35,6 +37,7 @@ class ChipStacker(object):
     def __init__(self, stackdb, workdir, swarp_configs=None):
         super(ChipStacker, self).__init__()
         self.workdir = workdir
+        self.noise_path = None
         if not os.path.exists(workdir):
             os.makedirs(workdir)
         self.stackdb = stackdb
@@ -51,7 +54,7 @@ class ChipStacker(object):
         Parameters
         ----------
         stack_name : str
-            Name of the stack being produced (for filenames and MongoDB 
+            Name of the stack being produced (for filenames and MongoDB
             document ``_id``s.
         image_keys : list
             List of image identifier strings (can be image keys from your
@@ -67,9 +70,9 @@ class ChipStacker(object):
         dbmeta : dict
             Arbitrary metadata to store in the stack's StackDB document.
         """
-        image_paths = dict(zip(image_keys, image_paths))
-        weight_paths = dict(zip(image_keys, weight_paths))
-        self._stack_images(image_keys, image_paths, weight_paths, stack_name)
+        im_paths = dict(zip(image_keys, image_paths))
+        w_paths = dict(zip(image_keys, weight_paths))
+        self._stack_images(image_keys, im_paths, w_paths, stack_name)
         self._remove_offset_frames()
         self._renormalize_weight()
         if noise_paths:
@@ -109,6 +112,7 @@ class ChipStacker(object):
         # Make resampled frames
         self.image_frames = {}
         for image_key, image_path in self.image_paths.iteritems():
+            print image_key, image_path
             header = astropy.io.fits.getheader(image_path)
             self.image_frames[image_key] = ResampledWCS(header)
         
@@ -259,20 +263,20 @@ def _compute_diff(arg):
     upper.setRange(overlap.upSlice)
     lower = SliceableImage.makeFromFITS(lowerKey, lowerPath, lowerWeightPath)
     lower.setRange(overlap.loSlice)
-    #print "\tUp slice:", overlap.upSlice,
-    #print "\tLo slice:", overlap.loSlice
-    #print upper.image.shape, lower.image.shape
-    #print upper.weight.shape, lower.weight.shape
-    goodPix = numpy.where((upper.weight > 0.) & (lower.weight > 0.))
+    goodPix = np.where((upper.weight > 0.) & (lower.weight > 0.))
     nPixels = len(goodPix[0])
     if nPixels > 10:
-        diffPixels = upper.image[goodPix] - lower.image[goodPix]
-        diffPixels = diffPixels[numpy.isfinite(diffPixels)]
-        # diffPixelsMean = diffPixels.mean()
-        diffPixelsMean = numpy.median(diffPixels)
-        diffPixelsSigma = diffPixels.std()
-        diffData = {"diffimage_mean": diffPixelsMean,
-                    "diffimage_sigma": diffPixelsSigma,
+        diff_pixels = upper.image[goodPix] - lower.image[goodPix]
+        diff_pixels = diff_pixels[np.isfinite(diff_pixels)]
+        clipped = sigma_clip(diff_pixels, sig=3., iters=None,
+                varfunc=np.nanvar)
+        median = np.median(clipped[~clipped.mask])
+        sigma = np.nanstd(clipped[~clipped.mask])
+        # diff_pixelsMean = diff_pixels.mean()
+        # diff_pixelsMean = np.median(diff_pixels)
+        # diff_pixelsSigma = diff_pixels.std()
+        diffData = {"diffimage_mean": median,
+                    "diffimage_sigma": sigma,
                     "area": nPixels}
     else:
         diffData = None
