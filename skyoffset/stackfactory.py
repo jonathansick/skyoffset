@@ -47,7 +47,8 @@ class ChipStacker(object):
             self._swarp_configs = {}
 
     def pipeline(self, stack_name, image_keys, image_paths, weight_paths,
-            noise_paths=None, db_meta=None):
+            noise_paths=None, db_meta=None, convergence_tol=1e-4,
+            n_iter_max=4):
         """Pipeline for running the ChipStacker method to produce stacks
         and addd them to the stack DB.
 
@@ -69,15 +70,18 @@ class ChipStacker(object):
             ``iamge_paths``.
         dbmeta : dict
             Arbitrary metadata to store in the stack's StackDB document.
+        convergence_tol : float
+            Fractional converence tolerance to halt frame offset estimation.
         """
         im_paths = dict(zip(image_keys, image_paths))
         w_paths = dict(zip(image_keys, weight_paths))
-        self._stack_images(image_keys, im_paths, w_paths, stack_name)
+        self._stack_images(image_keys, im_paths, w_paths, stack_name,
+                convergence_tol, n_iter_max)
         self._remove_offset_frames()
         self._renormalize_weight()
         if noise_paths:
             self._make_noisemap(image_keys, noise_paths,
-                [weight_paths[ik] for ik in image_keys],
+                [w_paths[ik] for ik in image_keys],
                 self._coadd_path)
         stack_doc = {"_id": stack_name,
                 "image_path": self._coadd_path,
@@ -94,7 +98,8 @@ class ChipStacker(object):
         self.stackdb.add_footprint_from_header(stack_name,
                 astropy.io.fits.getheader(self._coadd_path))
 
-    def _stack_images(self, image_keys, image_paths, weight_paths, stack_name):
+    def _stack_images(self, image_keys, image_paths, weight_paths, stack_name,
+            convergence_tol, n_iter_max):
         """Make a stack with the given list of images.
         :param image_keys: list of strings identifying the listed image paths.
         :param image_paths: dict of paths to single-extension FITS image files.
@@ -112,7 +117,6 @@ class ChipStacker(object):
         # Make resampled frames
         self.image_frames = {}
         for image_key, image_path in self.image_paths.iteritems():
-            print image_key, image_path
             header = astropy.io.fits.getheader(image_path)
             self.image_frames[image_key] = ResampledWCS(header)
         
@@ -125,36 +129,46 @@ class ChipStacker(object):
         for image_key in self.image_keys:
             self.overlaps[image_key] \
                 = Overlap(self.image_frames[image_key], self._coadd_frame)
-        
+
         # 3. Estimate offsets from the initial mean, and recompute the mean
         diff_data = self._compute_differences()
         offsets = self._estimate_offsets(diff_data)
-        self._make_offset_images(offsets)
-        print "Step 3 offset paths", self._current_offset_paths
-        self._coadd_path, self._coadd_weightpath, self._coadd_frame \
-                = self._coadd_frames()
-        
-        # 4. Recompute offsets to ensure convergence.
-        # Use a median for the final stack to get rid of artifacts
-        # But need to recompute overlaps to coaddFrame, just in case...
-        self.overlaps = {}
-        for imageKey in self.image_keys:
-            self.overlaps[imageKey] \
-                = Overlap(self.image_frames[imageKey], self._coadd_frame)
 
-        diff_data = self._compute_differences()
-        self.offsets = self._estimate_offsets(diff_data)
+        i = 0
+        while i < n_iter_max:
+            i += 1
+            print "CHIPSTACKER ITER", i
+            prev_offsets = dict(offsets)
+
+            self._make_offset_images(prev_offsets)
+            self._coadd_path, self._coadd_weightpath, self._coadd_frame \
+                    = self._coadd_frames()
+            self.overlaps = {}
+            for imageKey in self.image_keys:
+                self.overlaps[imageKey] \
+                    = Overlap(self.image_frames[imageKey], self._coadd_frame)
+
+            diff_data = self._compute_differences()
+            offsets = self._estimate_offsets(diff_data)
+
+            all_conv = True
+            for ik, offset in offsets.iteritems():
+                prev_offset = prev_offsets[ik]
+                print ik, offset, "from", prev_offset
+                if np.abs((offset - prev_offset) / offset) > convergence_tol:
+                    all_conv = False
+            if all_conv:
+                break
+
+        # Make final stacks
+        self.offsets = offsets
         self._make_offset_images(self.offsets)
-        print "Step 4 offset paths", self._current_offset_paths
         self._coadd_path, self._coadd_weightpath, self._coadd_frame \
             = self._coadd_frames()
 
     def _remove_offset_frames(self):
-        print "currentOffsetPaths"
-        print self._current_offset_paths
         for imageKey in self.image_keys:
             os.remove(self._current_offset_paths[imageKey])
-            print "Delete", self._current_offset_paths[imageKey]
 
     def _renormalize_weight(self):
         """Renormalizes the weight image of the stack."""
@@ -199,12 +213,18 @@ class ChipStacker(object):
             args.append(arg)
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
         results = pool.map(_compute_diff, args)
+        pool.terminate()
         #results = map(_compute_diff, args)
         offsets = {}
         for result in results:
             frame, coaddKey, offsetData = result
             offsets[frame] = offsetData  # look at _compute_diff() for spec
-        pool.terminate()
+        # Normalize offsets
+        net_offset = np.mean([d['diffimage_mean']
+            for ik, d in offsets.iteritems()])
+        for ik, offset in offsets.iteritems():
+            offsets[ik]['diffimage_mean'] = offset['diffimage_mean'] \
+                - net_offset
         return offsets
     
     def _estimate_offsets(self, diff_data):
