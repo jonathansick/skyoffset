@@ -21,7 +21,9 @@ def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
         offset_fcn=offsettools.apply_offset,
         target_fits=None,
         threads=multiprocessing.cpu_count(),
-        delete_offset_images=True):
+        delete_offset_images=True,
+        path_key="image_path",
+        weight_key="weight_path"):
     """Construct a mosaic by offsetting blocks and swarping."""
     offsetDir = os.path.join(workDir, "offset_images")
     if os.path.exists(offsetDir) is False: os.makedirs(offsetDir)
@@ -34,8 +36,8 @@ def block_mosaic(blockDocs, offsets, mosaicName, swarp_configs, workDir,
     for stackName, blockDoc in blockDocs.iteritems():
         stackName = blockDoc['_id']
         fieldNames.append(stackName)
-        imagePath = blockDoc['image_path']
-        weightPaths[stackName] = blockDoc['weight_path']
+        imagePath = blockDoc[path_key]
+        weightPaths[stackName] = blockDoc[weight_key]
         offset = offsets[stackName]
         offsetPath = os.path.join(offsetDir, stackName + ".fits")
         offsetPaths[stackName] = offsetPath

@@ -38,12 +38,18 @@ class ScalarMosaicFactory(object):
         :class:`moastro.astromatic.Swarp`.
     """
     def __init__(self, mosaic_name, block_sel, blockdb, mosaicdb,
-            workdir, swarp_configs=None):
+            workdir, swarp_configs=None,
+            image_key='image_path', weight_key='weight_path',
+            noise_key='noise_path', mask_key='mask_path'):
         super(ScalarMosaicFactory, self).__init__()
         self.mosaic_name = mosaic_name
         self.block_sel = dict(block_sel)
         self.blockdb = blockdb
         self.mosaicdb = mosaicdb
+        self._image_key = image_key
+        self._weight_key = weight_key
+        self._noise_key = noise_key
+        self._mask_key = mask_key
         self.workdir = os.path.join(workdir, mosaic_name)
         if not os.path.exists(workdir): os.makedirs(workdir)
         if swarp_configs:
@@ -137,8 +143,8 @@ class ScalarMosaicFactory(object):
         """
         couplings = Couplings()
         for block_name, block_doc in block_docs.iteritems():
-            blockPath = block_doc['image_path']
-            blockWeightPath = block_doc['weight_path']
+            blockPath = block_doc[self._image_key]
+            blockWeightPath = block_doc[self._weight_key]
             if block_mask_key and block_mask_key in block_doc:
                 mask_path = block_doc[block_mask_key]
             else:
@@ -254,7 +260,9 @@ class ScalarMosaicFactory(object):
                 offsets, self.mosaic_name, self._swarp_configs, self.workdir,
                 target_fits=target_fits,
                 delete_offset_images=True,
-                offset_fcn=offsettools.apply_offset)
+                offset_fcn=offsettools.apply_offset,
+                path_key=self._image_key,
+                weight_key=self._weight_key)
 
         self.mosaicdb.c.update({"_id": self.mosaic_name},
                 {"$set": {"image_path": mosaic_path,
@@ -277,8 +285,8 @@ class ScalarMosaicFactory(object):
             block_sel = dict(self.block_sel)
         block_docs = self.blockdb.find_dict(block_sel)
         for blockName, blockDoc in block_docs.iteritems():
-            noise_paths.append(blockDoc['noise_path'])
-            weight_paths.append(blockDoc['weight_path'])
+            noise_paths.append(blockDoc[self._noise_key])
+            weight_paths.append(blockDoc[self._weight_key])
         mosaic_doc = self.mosaicdb.find({"_id": self.mosaic_name}, one=True)
         mosaic_path = mosaic_doc['image_path']
         factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
