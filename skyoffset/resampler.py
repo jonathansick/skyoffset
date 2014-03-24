@@ -170,6 +170,7 @@ class MosaicResampler(object):
                 doc['weight_path'] = resampled_weight_paths[i]
             doc['set_name'] = set_name
             doc['pix_scale'] = pix_scale
+            doc['native_pix_scale'] = orig_pix_scale
             if 'offsets' in doc:
                 doc['offsets'] = self._rescale_offsets(doc['offsets'],
                     orig_pix_scale, pix_scale)
