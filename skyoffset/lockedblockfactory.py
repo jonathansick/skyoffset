@@ -83,8 +83,11 @@ class LockedBlockFactory(object):
         image_keys = []
         image_paths = []
         weight_paths = []
-        docs = self.imagelog.find(self.image_sel,
-            fields=[image_key, weight_key])
+        s = dict(self.image_sel)
+        s[image_key] = {"$exists": 1}
+        s[weight_key] = {"$exists": 1}
+        docs = self.imagelog.find(s, fields=[image_key, weight_key])
+        assert docs.count() > 0
         for doc in docs:
             image_keys.append(doc['_id'])
             image_paths.append(doc[image_key])
@@ -100,12 +103,14 @@ class LockedBlockFactory(object):
         """Estimate single sky offsets for each camera exposure as the
         median frame offset estimated in individual stacks.
         """
-        image_keys = self.imagelog.find_images(self.image_sel)
         # Hold arrays of frame offsets observed for each image
-        offset_ests = {ik: [] for ik in image_keys}
+        offset_ests = {}
         for stack in self.stackdb.find(stack_sel):
             for ik, offset in stack['offsets'].iteritems():
-                offset_ests[ik].append(offset)
+                if ik in offset_ests:
+                    offset_ests[ik].append(offset)
+                else:
+                    offset_ests[ik] = [offset]
         self.offsets = {}
         self.offset_std = {}
         for ik, offsets in offset_ests.iteritems():
@@ -145,7 +150,11 @@ class LockedBlockFactory(object):
         offset_paths = []
         offsets = []
         args = []
-        docs = self.imagelog.find(self.image_sel)
+        s = dict(self.image_sel)
+        for ikey, wkey in zip(image_path_keys, weight_path_keys):
+            s[ikey] = {"$exists": 1}
+            s[wkey] = {"$exists": 1}
+        docs = self.imagelog.find(s)
         assert docs.count() > 0
         for doc in docs:
             for ikey, wkey in zip(image_path_keys, weight_path_keys):
@@ -176,7 +185,13 @@ class LockedBlockFactory(object):
         # Make noisemap if possible
         noise_paths = []
         if noise_path_keys is not None:
-            docs = self.imagelog.find(self.image_sel)
+            s = dict(self.image_sel)
+            for ikey, wkey, nkey in zip(image_path_keys, weight_path_keys,
+                    noise_path_keys):
+                s[ikey] = {"$exists": 1}
+                s[wkey] = {"$exists": 1}
+                s[nkey] = {"$exists": 1}
+            docs = self.imagelog.find(s)
             for doc in docs:
                 for nkey in noise_path_keys:
                     noise_paths.append(doc[nkey])
