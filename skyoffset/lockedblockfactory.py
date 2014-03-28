@@ -77,7 +77,7 @@ class LockedBlockFactory(object):
         self.noise_path = None
 
     def make_stack(self, stack_name, image_key, weight_key, db_meta=None,
-            clean_files=True):
+            clean_files=True, n_iter_max=4):
         """Make a stack simply to get frame sky offsets."""
         stackdir = os.path.join(self.workdir, stack_name)
         image_keys = []
@@ -95,7 +95,7 @@ class LockedBlockFactory(object):
         stacker = ChipStacker(self.stackdb, stackdir,
             swarp_configs=self._swarp_configs)
         stacker.pipeline(stack_name, image_keys, image_paths, weight_paths,
-                db_meta=db_meta)
+                db_meta=db_meta, n_iter_max=n_iter_max)
         if clean_files:
             shutil.rmtree(stackdir)
 
