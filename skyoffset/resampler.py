@@ -234,19 +234,19 @@ class MosaicResampler(object):
         # Resample other images into same frame.
         _im_paths = [image_paths[i] for i in resample_indices]
         _w_paths = [weight_paths[i] for i in resample_indices]
-        swarp = moastro.astromatic.Swarp(_im_paths, set_name,
-            weightPaths=_w_paths,
-            configs=swarp_configs,
-            workDir=self.workdir)
-        print "using target", self._target_fits
-        swarp.set_target_fits(self._target_fits)
-        swarp.run()
-        resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
-        # Trim the resampled images to ensure NAXISi and CRPIXi match
-        rimage_paths.extend([d['0'] for d in resamp_paths])
-        rweight_paths.extend([d['0'] for d in resamp_wpaths])
-        self._resize_resampled_images(self._target_fits, rimage_paths)
-        self._resize_resampled_images(self._target_fits, rweight_paths)
+        if len(_im_paths) > 0:
+            swarp = moastro.astromatic.Swarp(_im_paths, set_name,
+                weightPaths=_w_paths,
+                configs=swarp_configs,
+                workDir=self.workdir)
+            swarp.set_target_fits(self._target_fits)
+            swarp.run()
+            resamp_paths, resamp_wpaths = swarp.resampled_paths([0])
+            # Trim the resampled images to ensure NAXISi and CRPIXi match
+            rimage_paths.extend([d['0'] for d in resamp_paths])
+            rweight_paths.extend([d['0'] for d in resamp_wpaths])
+            self._resize_resampled_images(self._target_fits, rimage_paths)
+            self._resize_resampled_images(self._target_fits, rweight_paths)
 
         return rimage_paths, rweight_paths
 
