@@ -52,7 +52,7 @@ class ScalarMosaicFactory(object):
         self._mask_key = mask_key
         self.workdir = os.path.join(workdir, mosaic_name)
         if not os.path.exists(workdir): os.makedirs(workdir)
-        if swarp_configs:
+        if swarp_confgs:
             self._swarp_configs = dict(swarp_configs)
         else:
             self._swarp_configs = {}
@@ -222,7 +222,8 @@ class ScalarMosaicFactory(object):
         sigma = delta.std() / np.sqrt(float(n_blocks))
         return float(sigma)
 
-    def make_mosaic(self, block_selector=None, target_fits=None):
+    def make_mosaic(self, block_selector=None, target_fits=None,
+            mosaic_key='image_path', weight_key='weight_path'):
         """Swarp a mosaic using the optimal sky offsets.
         
         The mosaic can be made anytime once entries are added
@@ -241,6 +242,10 @@ class ScalarMosaicFactory(object):
             output frame of the block. The output blocks will then correspond
             pixel-to-pixel. Note that both blocks should already be resampled
             into the same pixel space.
+        mosaic_key : str
+            MosaicDB key to save the mosaic's FITS path.
+        weight_key : str
+            MosaicDB key to save the mosaic weightmap's FITS path.
         """
         mosaicDoc = self.mosaicdb.c.find_one({"_id": self.mosaic_name})
         solver_cname = mosaicDoc['solver_cname']
@@ -265,8 +270,8 @@ class ScalarMosaicFactory(object):
                 weight_key=self._weight_key)
 
         self.mosaicdb.c.update({"_id": self.mosaic_name},
-                {"$set": {"image_path": mosaic_path,
-                          "weight_path": mosaic_weight_path}})
+                {"$set": {mosaic_key: mosaic_path,
+                          weight_key: mosaic_weight_path}})
 
     def make_noisemap(self, block_selector=None):
         """Make a Gaussian sigma noise map, propagating those from stacks.
