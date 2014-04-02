@@ -52,7 +52,7 @@ class ScalarMosaicFactory(object):
         self._mask_key = mask_key
         self.workdir = os.path.join(workdir, mosaic_name)
         if not os.path.exists(workdir): os.makedirs(workdir)
-        if swarp_confgs:
+        if swarp_configs:
             self._swarp_configs = dict(swarp_configs)
         else:
             self._swarp_configs = {}
