@@ -233,7 +233,10 @@ class MosaicResampler(object):
 
         # Resample other images into same frame.
         _im_paths = [image_paths[i] for i in resample_indices]
-        _w_paths = [weight_paths[i] for i in resample_indices]
+        if weight_paths is not None:
+            _w_paths = [weight_paths[i] for i in resample_indices]
+        else:
+            _w_paths = None
         if len(_im_paths) > 0:
             swarp = moastro.astromatic.Swarp(_im_paths, set_name,
                 weightPaths=_w_paths,
