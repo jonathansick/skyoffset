@@ -220,8 +220,12 @@ class MosaicResampler(object):
 
         # Resample first image and use it as a target frame for others
         if self._target_fits is None:
+            if weight_paths is not None:
+                target_weight = [weight_paths[0]]
+            else:
+                target_weight = None
             swarp = moastro.astromatic.Swarp([image_paths[0]], set_name,
-                weightPaths=[weight_paths[0]],
+                weightPaths=target_weight,
                 configs=swarp_configs,
                 workDir=self.workdir)
             swarp.run()
