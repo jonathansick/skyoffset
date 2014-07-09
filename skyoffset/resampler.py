@@ -116,6 +116,8 @@ class MosaicResampler(object):
         """
         if swarp_configs:
             swarp_configs = dict(swarp_configs)
+        else:
+            swarp_configs = {}
         swarp_configs['COMBINE'] = 'N'
         swarp_configs['RESAMPLE'] = 'Y'
         swarp_configs['PIXEL_SCALE'] = "%.2f" % pix_scale
