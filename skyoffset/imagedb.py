@@ -81,7 +81,7 @@ class MosaicDB(ImageLog):
             WCS for the mosaic.
         """
         doc = {}
-        doc['naxis'] = (wcs.naxis1, wcs.naxis2)
+        doc['naxis'] = (wcs._naxis1, wcs._naxis2)
         doc['crpix'] = tuple(wcs.wcs.crpix)  # (CRPIX1, CRPIX2)
         doc['crval'] = tuple(wcs.wcs.crval)  # (CRVAL1, CRVAL2)
         doc['ctype'] = tuple(wcs.wcs.ctype)
