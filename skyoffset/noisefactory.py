@@ -14,7 +14,7 @@ from moastro.astromatic import Swarp
 
 class NoiseMapFactory(object):
     """Construct the Gaussian noise map of a mosaic given the component images.
-    
+
     Parameters
     ----------
     noise_paths : list
@@ -35,7 +35,7 @@ class NoiseMapFactory(object):
         Set ``False`` if intermediate image files *should not* be deleted.
     """
     def __init__(self, noise_paths, weight_paths, mosaic_path,
-            swarp_configs=None, delete_temps=True):
+                 swarp_configs=None, delete_temps=True):
         super(NoiseMapFactory, self).__init__()
         self.MAX_NPIX_IN_MEMORY = 0.4e9  # max n pixel before using mmap
         self.MEMMAP_CHUNK_SIZE = 1000  # number of rows to process in memmap
@@ -43,7 +43,7 @@ class NoiseMapFactory(object):
         self._weight_paths = weight_paths
         self._mosaic_path = mosaic_path
         self._noise_map_path = ".".join((os.path.splitext(mosaic_path)[0],
-            "noise.fits"))
+                                         "noise.fits"))
         if swarp_configs:
             self._configs = {}
         else:
@@ -53,8 +53,7 @@ class NoiseMapFactory(object):
         coverage_map_path = self._make_coverage_map(coverage_paths)
         var_sum_path = self._make_var_sum_map(variance_paths, coverage_paths)
         # Combine the maps into a sigma map
-        self._make_sigma_map(coverage_map_path,
-                var_sum_path)
+        self._make_sigma_map(coverage_map_path, var_sum_path)
         # Delete temporary images
         if delete_temps:
             for p in coverage_paths:
@@ -73,9 +72,9 @@ class NoiseMapFactory(object):
         cov_paths, var_paths = [], []
         for sigma_path, weight_path in zip(self._paths, self._weight_paths):
             coverage_path = ".".join((os.path.splitext(sigma_path)[0],
-                "coverage.fits"))
+                                      "coverage.fits"))
             var_path = ".".join((os.path.splitext(sigma_path)[0],
-                "var.fits"))
+                                 "var.fits"))
             fits = astropy.io.fits.open(sigma_path)
             wfits = astropy.io.fits.open(weight_path)
             # Make a coverage image from the weightmap
@@ -96,12 +95,12 @@ class NoiseMapFactory(object):
         """Make a map with the sum of images covering each pixel."""
         configs = dict(self._configs)
         configs.update({"COMBINE_TYPE": "SUM", "RESAMPLE": "N",
-            "SUBTRACT_BACK": "N"})
+                        "SUBTRACT_BACK": "N"})
         name = os.path.basename(os.path.splitext(self._mosaic_path)[0]) \
-                + ".coverage.fits"
+            + ".coverage.fits"
         swarp = Swarp(coverage_paths, name,
-                configs=configs,
-                workDir=os.path.dirname(self._mosaic_path))
+                      configs=configs,
+                      workDir=os.path.dirname(self._mosaic_path))
         swarp.set_target_fits(self._mosaic_path)
         swarp.run()
         coadd_path, coadd_weight_path = swarp.mosaic_paths()
@@ -112,14 +111,14 @@ class NoiseMapFactory(object):
         """Make a map with the sum of variances."""
         configs = dict(self._configs)
         configs.update({"COMBINE_TYPE": "SUM", "RESAMPLE": "N",
-            "WEIGHT_TYPE": "MAP_WEIGHT",
-            "SUBTRACT_BACK": "N"})
+                        "WEIGHT_TYPE": "MAP_WEIGHT",
+                        "SUBTRACT_BACK": "N"})
         name = os.path.basename(os.path.splitext(self._mosaic_path)[0]) \
-                + ".varsum.fits"
+            + ".varsum.fits"
         swarp = Swarp(variance_paths, name,
-                weightPaths=coverage_paths,
-                configs=configs,
-                workDir=os.path.dirname(self._mosaic_path))
+                      weightPaths=coverage_paths,
+                      configs=configs,
+                      workDir=os.path.dirname(self._mosaic_path))
         swarp.set_target_fits(self._mosaic_path)
         swarp.run()
         coadd_path, coadd_weight_path = swarp.mosaic_paths()
@@ -128,7 +127,7 @@ class NoiseMapFactory(object):
 
     def _make_sigma_map(self, coverage_path, variance_sum_path):
         """Make a final sigma map.
-        
+
         Since mosaics can be potentially very large, we open the coverage
         and variance sum maps using a memory map and operate on chunks of rows
         if the mosaic is larger than a defined size.
@@ -143,14 +142,17 @@ class NoiseMapFactory(object):
             cfits = astropy.io.fits.open(coverage_path, memmap=True)
             shutil.copy(variance_sum_path, self._noise_map_path)
             vfits = astropy.io.fits.open(variance_sum_path,
-                    mode='update', memmap=True)
+                                         memmap=True)
+            sigma_fits = astropy.io.fits.open(self._noise_map_path,
+                                              mode='update',
+                                              memmap=True)
             ymin = 0
             ymax = ymin + self.MEMMAP_CHUNK_SIZE
             while ymax <= ny:
-                vfits[0].data[ymin:ymax, :] = np.sqrt(
+                sigma_fits[0].data[ymin:ymax, :] = np.sqrt(
                     vfits[0].data[ymin:ymax, :]
                     / cfits[0].data[ymin:ymax, :])
-                vfits.flush()
+                sigma_fits.flush()
                 # Update chunck range
                 ymin = ymax
                 ymax = ymin + self.MEMMAP_CHUNK_SIZE
@@ -160,6 +162,7 @@ class NoiseMapFactory(object):
                     break
             cfits.close()
             vfits.close()
+            sigma_fits.close()
         else:
             print "In-memory for sigma map"
             # Operate on entire mosaic in memory
