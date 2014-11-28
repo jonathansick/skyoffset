@@ -20,24 +20,25 @@ class SliceableBase(object):
         """Set masked pixels to NaN."""
         image[mask > 0] = np.nan
         return image
-    
+
     def getGoodPix(self, fracThreshold=0.5, threshold=None):
         if threshold is None:
-            threshold = fracThreshold * (self.weight.max()
-                    - self.weight.min()) + self.weight.min()
+            threshold = fracThreshold * \
+                (self.weight.max() - self.weight.min()) + self.weight.min()
         return self.weight > threshold
-    
+
     def saveSegments(self, pathRoot):
         """Saves a the sliced FITS image to pathRoot_im.fits and the sliced
-        weight FITS to pathRoot_wht.fits."""
+        weight FITS to pathRoot_wht.fits.
+        """
         dirname = os.path.dirname(pathRoot)
         if os.path.exists(dirname) is False:
             os.makedirs(dirname)
         astropy.io.fits.writeto(pathRoot + "_im.fits", self.image,
-                clobber=True)
+                                clobber=True)
         if self.weight is not None:
             astropy.io.fits.writeto(pathRoot + "_wht.fits", self.weight,
-                    clobber=True)
+                                    clobber=True)
 
 
 class SliceableImage(SliceableBase):
@@ -55,7 +56,7 @@ class SliceableImage(SliceableBase):
         self.r = None
         self.image = None
         self.weight = None
-    
+
     @classmethod
     def makeFromFITS(cls, key, imagePath, weightPath, mask_path=None):
         """Create a `SliceableImage` from FITS paths"""
@@ -69,12 +70,11 @@ class SliceableImage(SliceableBase):
         else:
             m = None
         return cls(key, astropy.io.fits.getdata(imagePath, 0), w, mask=m)
-    
+
     def _slice(self, im):
         return im[self.r[1][0]:self.r[1][1], self.r[0][0]:self.r[0][1]]
-    
+
     def setRange(self, sliceRange):
-        """docstring for setRange"""
         self.r = sliceRange
         self.image = self._slice(self.fullImage)
         if self.fullWeight is not None:
@@ -98,15 +98,14 @@ class SliceableFITS(SliceableBase):
         self.image = None
         self.weight = None
         self.r = None
-    
+
     def setRange(self, sliceRange):
-        """docstring for setRange"""
         self.r = sliceRange
         imageSec = self.imageFITS[0].section[self.r[1][0]:self.r[1][1], :]
         weightSec = self.weightFITS[0].section[self.r[1][0]:self.r[1][1], :]
         self.image = imageSec[:, self.r[0][0]:self.r[0][1]]
         self.weight = weightSec[:, self.r[0][0]:self.r[0][1]]
-    
+
     def close(self):
         """Deallocate the FITS file references."""
         self.imageFITS.close()
@@ -115,8 +114,6 @@ class SliceableFITS(SliceableBase):
 
 class ResampledWCS(object):
     """Holds the WCS of a single resampled image frame.
-    
-    .. TODO:: rename to be unlike `frame`.
     """
     def __init__(self, header):
         super(ResampledWCS, self).__init__()
@@ -126,39 +123,38 @@ class ResampledWCS(object):
         self.crpix1 = int(self.header['crpix1']) - 1  # to be 0-based
         self.crpix2 = int(self.header['crpix2']) - 1
         self.makePolygon()
-    
+
     def makePolygon(self):
         """Makes self.polygon, which is a `Polygon` instance with vertices in
         the primed space of the mosaic image.
         """
         polyPoints = self.getVertices()
         self.polygon = Polygon.Polygon(polyPoints)
-    
+
     def getVertices(self):
         """docstring for getVertices"""
         print self.naxis1, self.naxis2, self.crpix1, self.crpix2
         vertsX = np.array([0, 0, self.naxis1 - 1, self.naxis1 - 1],
-                dtype=int) - self.crpix1
+                          dtype=int) - self.crpix1
         vertsY = np.array([0, self.naxis2 - 1, self.naxis2 - 1, 0],
-                dtype=int) - self.crpix2
+                          dtype=int) - self.crpix2
         vertsX = list(vertsX)
         vertsY = list(vertsY)
         polyPoints = zip(vertsX, vertsY)
         return polyPoints
-    
+
     def getCentroid(self):
         """:return: (x,y) tuple of the frame centroid in the mosaic space."""
         x = np.array([0, 0, self.naxis1 - 1, self.naxis1 - 1], dtype=int) \
-                - self.crpix1
+            - self.crpix1
         y = np.array([0, self.naxis2 - 1, self.naxis2 - 1, 0], dtype=int) \
-                - self.crpix2
+            - self.crpix2
         return x.mean(), y.mean()
 
 
 class ManualResampledWCS(ResampledWCS):
     """Manually create a ResampledWCS from NAXISi and CRPIXi."""
     def __init__(self, naxis1, naxis2, crpix1, crpix2):
-        """docstring for __init__"""
         self.naxis1 = naxis1
         self.naxis2 = naxis2
         self.crpix1 = int(crpix1) - 1  # so that everything is zero-based
@@ -173,20 +169,20 @@ class Overlap(object):
         super(Overlap, self).__init__()
         self.upperFrame = upperFrame
         self.lowerFrame = lowerFrame
-        
+
         self._computeOverlap()
-        
+
         if self.overlap is not None:
             self.upSlice = self._makeOverlapRangeForImageFrame(self.upperFrame)
             self.loSlice = self._makeOverlapRangeForImageFrame(self.lowerFrame)
-    
+
     def _computeOverlap(self):
         """Determins the polygon of the overlap between the two frames."""
         if self.upperFrame.polygon.overlaps(self.lowerFrame.polygon):
             self.overlap = self.upperFrame.polygon & self.lowerFrame.polygon
         else:
             self.overlap = None
-    
+
     def _makeOverlapRangeForImageFrame(self, frame):
         """Converts a polygon in co-add space to a range across the image's
         axes.
@@ -205,18 +201,17 @@ class Overlap(object):
         xmax = int(max(xlist))
         # add one to the upper limit because of the behaviour of range() func
         return (xmin, xmax + 1), (ymin, ymax + 1)
-    
+
     def hasOverlap(self):
-        """docstring for hasOverlap"""
         if self.overlap is None:
             return False
         else:
             return True
-    
+
     def getUpperLowerSlices(self):
         """:return: tuple (upper slice, lower slice)"""
         return self.upSlice, self.loSlice
-    
+
     def getOverlapCRPIX(self, r, frame):
         """:return: tuple (CRPIX1, CRPIX2) of the overlapping image frame."""
         # The left slice of the upper image. This is the amount that the CRPIX1
@@ -227,34 +222,34 @@ class Overlap(object):
         deltaY = r[1][0]
         crpix2 = frame.crpix2 - deltaY
         return (crpix1, crpix2)
-    
+
     def getLowerOverlapCRPIX(self):
         """docstring for getLowerOverlapCRPIX"""
         return self.getOverlapCRPIX(self.loSlice, self.lowerFrame)
-    
+
     def getUpperOverlapCRPIX(self):
         """docstring for getLowerOverlapCRPIX"""
         return self.getOverlapCRPIX(self.upSlice, self.upperFrame)
-    
+
     def getUpperCentreTrans(self):
         """:return: (delta x, delta y) tuple of offsets to go from the centre
         of the upper frame, to the centre of the overlap frame."""
         return self._makeCentreTrans(self.upperFrame, self.upSlice)
-    
+
     def getLowerCentreTrans(self):
         """:return: (delta x, delta y) tuple of offsets to go from the centre
         of the upper frame, to the centre of the overlap frame."""
         return self._makeCentreTrans(self.lowerFrame, self.loSlice)
-    
+
     def _makeCentreTrans(self, frame, slce):
         oXMin, oXMax = slce[0]
         oYMin, oYMax = slce[1]
         oWidth = oXMax - oXMin
         oHeight = oYMax - oYMin
-        
+
         fWidth = frame.naxis1
         fHeight = frame.naxis2
-        
+
         xDelta = oXMin + oWidth / 2. - fWidth / 2.
         yDelta = oYMin + oHeight / 2. - fHeight / 2.
         return xDelta, yDelta
@@ -269,7 +264,7 @@ class OverlapDB(object):
         # frame/field dictionary of ResampledWCS instances
         self.resampledWCSs = resampledWCSs
         self._findOverlaps()
-    
+
     def __getitem__(self, targetField):
         """:return: a list of all fields that have overlaps with `targetField`.
         """
@@ -281,7 +276,7 @@ class OverlapDB(object):
                 else:
                     coupledFields.append(overlapKey[0])
         return list(set(coupledFields))
-    
+
     def _findOverlaps(self):
         """docstring for findOverlaps"""
         self.overlaps = {}
@@ -289,11 +284,11 @@ class OverlapDB(object):
         for i, frameID1 in enumerate(frameIDs):
             for frameID2 in frameIDs[i + 1:]:
                 overlap = Overlap(self.resampledWCSs[frameID1],
-                        self.resampledWCSs[frameID2])
+                                  self.resampledWCSs[frameID2])
                 if overlap.hasOverlap():
                     overlapKey = (frameID1, frameID2)
                     self.overlaps[overlapKey] = overlap
-    
+
     def iteritems(self):
         """Delegate iteritems to the overlaps dictionary"""
         return self.overlaps.iteritems()
@@ -310,14 +305,14 @@ class Couplings(object):
         self.fieldLevels = {}
         self.coverage_fractions = {}
         self.diff_paths = {}
-    
+
     def __getitem__(self, fieldname):
         """:return: list of fields that are coupled to the named field."""
         return self.overlapDB[fieldname]
-    
+
     def get_doc(self):
         """Makes a dictionary document for saving the couplings in MongoDB.
-        
+
         The field tuples are replaced with a single string key using '*'
         as the delimter.
         """
@@ -340,18 +335,18 @@ class Couplings(object):
         for pair, p in self.diff_paths.iteritems():
             diff_paths["*".join(pair)] = p
         doc = {"fields": self.fields,
-            "diffs": diffs,
-            "sigmas": sigmas,
-            "areas": areas,
-            "levels": levels,
-            "coverage_fractions": coverage_fractions,
-            "diff_paths": diff_paths}
+               "diffs": diffs,
+               "sigmas": sigmas,
+               "areas": areas,
+               "levels": levels,
+               "coverage_fractions": coverage_fractions,
+               "diff_paths": diff_paths}
         return doc
 
     @classmethod
     def load_doc(cls, doc):
         """Make a Couplings instance from a MongoDB document.
-        
+
         The mongoDB document simulates tuples of field pairs as a string with
         '*' as the delimeter.
         """
@@ -390,7 +385,7 @@ class Couplings(object):
             os.makedirs(dirname)
         if os.path.exists(path):
             os.remove(path)
-        
+
         f = open(path, 'w')
         p = cPickle.Pickler(f)
         p.dump(self.fieldDiffs)
@@ -400,7 +395,7 @@ class Couplings(object):
         p.dump(self.coverage_fractions)
         p.dump(self.diff_paths)
         f.close()
-    
+
     @classmethod
     def load(cls, path, fields):
         """Load a Couplings object from a pickle at the given `path`. Fields
@@ -418,10 +413,10 @@ class Couplings(object):
         instance.coverage_fractions = p.load()
         instance.diff_paths = p.load()
         f.close()
-        
+
         instance._trim_diffs_to_fields()
         return instance
-    
+
     def _trim_diffs_to_fields(self):
         """When loading a couplings object from a pickle, you may want to
         use fewer field objects than went into the original couplings DB.
@@ -437,7 +432,7 @@ class Couplings(object):
                 del self.fieldLevels[pairKey]
                 del self.coverage_fractions[pairKey]
                 del self.diff_paths[pairKey]
-    
+
     def get_overlap_db(self):
         return self.overlapDB
 
@@ -446,9 +441,9 @@ class Couplings(object):
         specification...
         """
         self.fields[name] = {'image_path': imagePath,
-                'weight_path': weightPath,
-                'mask_path': mask_path}
-    
+                             'weight_path': weightPath,
+                             'mask_path': mask_path}
+
     def make(self, diffDir, mp=True, plotDir=None):
         """Compute coupled image differences, using `diffDir` as a working
         directory for the image differencing.
@@ -477,22 +472,23 @@ class Couplings(object):
         """
         resampledWCS = ResampledWCS(astropy.io.fits.getheader(imagePath, 0))
         return resampledWCS
-        
+
     def _compute_overlap_diffs(self, diffImageDir, mp=True, plotDir=None):
         """Compute the scalar offsets between fields in each overlap.
-        
+
         This is done with multiprocessing, so that overlaps are computed in
         parallel.
-        
+
         :param diffImageDir: can optionally be set to a directory name so
             that the computed difference images will be saved there.
         """
         if plotDir is None:
             plotDir = diffImageDir
-        print "Plot Dir is", plotDir
-        if os.path.exists(diffImageDir) is False: os.makedirs(diffImageDir)
-        if os.path.exists(plotDir) is False: os.makedirs(plotDir)
-        
+        if os.path.exists(diffImageDir) is False:
+            os.makedirs(diffImageDir)
+        if os.path.exists(plotDir) is False:
+            os.makedirs(plotDir)
+
         args = []
         for overlapKey, overlap in self.overlapDB.iteritems():
             field1, field2 = overlapKey
@@ -503,8 +499,8 @@ class Couplings(object):
             field2WeightPath = self.fields[field2]['weight_path']
             field2MaskPath = self.fields[field2]['mask_path']
             arg = (field1, field1Path, field1WeightPath, field1MaskPath,
-                    field2, field2Path, field2WeightPath, field2MaskPath,
-                    overlap, diffImageDir, plotDir, 5)
+                   field2, field2Path, field2WeightPath, field2MaskPath,
+                   overlap, diffImageDir, plotDir, 5)
             args.append(arg)
         if mp:
             pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
@@ -538,11 +534,11 @@ class Couplings(object):
         self.fieldLevels = meanLevels
         self.coverage_fractions = coverage_fractions
         self.diff_paths = diff_paths
-    
+
     def get_field_diffs(self, omittedFields=[], replicatedFields=[]):
         """Returns a dictionary of field differences, and a list of fields
         represented.
-        
+
         Parameters
         ----------
         omittedFields : list
@@ -563,11 +559,11 @@ class Couplings(object):
             diffs.append(diff)
             diffSigmas[pairName] = self.fieldDiffSigmas[pairName]
         print "There are %i pairs initially" % len(pairNames)
-        pairNames, diffs = self._getFieldDiffsAfterReplication(pairNames,
-            diffs, replicatedFields)
+        pairNames, diffs = self._getFieldDiffsAfterReplication(
+            pairNames, diffs, replicatedFields)
         print "There are %i pairs after replication" % len(pairNames)
-        pairNames, diffs = self._getFieldDiffsAfterOmission(pairNames, diffs,
-            omittedFields)
+        pairNames, diffs = self._getFieldDiffsAfterOmission(
+            pairNames, diffs, omittedFields)
         print "There are %i pairs after omission" % len(pairNames)
         print "Should have omitted %i fields" % len(omittedFields)
         # Now get a set of the represented fields
@@ -577,9 +573,9 @@ class Couplings(object):
             allFields.append(pairKey[1])
         allFields = list(set(allFields))
         return pairNames, diffs, diffSigmas, allFields
-    
+
     def _getFieldDiffsAfterReplication(self, pairNames, diffs,
-            replicatedFields):
+                                       replicatedFields):
         """Duplicates items in pairNames and diffs for each match item in
         replicatedFields.
         """
@@ -594,7 +590,7 @@ class Couplings(object):
         pairNames += extraPairNames
         diffs += extraDiffs
         return pairNames, diffs
-    
+
     def _getFieldDiffsAfterOmission(self, pairNames, diffs, omittedFields):
         """Omits an coupling that includes the omitted fields."""
         retainedPairNames = []
@@ -604,7 +600,7 @@ class Couplings(object):
             for field in pairName:
                 if field in omittedFields:
                     keep = False
-            if keep == True:
+            if keep is True:
                 retainedPairNames.append(pairNames[i])
                 retainedDiffs.append(diffs[i])
         return retainedPairNames, retainedDiffs
@@ -613,13 +609,13 @@ class Couplings(object):
 def _computeDiff(arg):
     """Worker: Computes the DC offset of frame-coadd"""
     upperKey, upperPath, upperWeightPath, upperMaskKey, lowerKey, lowerPath, \
-            lowerWeightPath, lowerMaskKey, \
-            overlap, diffDir, diffPlotDir, nsigma = arg
-    upper = SliceableImage.makeFromFITS(upperKey, upperPath, upperWeightPath,
-            mask_path=upperMaskKey)
+        lowerWeightPath, lowerMaskKey, \
+        overlap, diffDir, diffPlotDir, nsigma = arg
+    upper = SliceableImage.makeFromFITS(
+        upperKey, upperPath, upperWeightPath, mask_path=upperMaskKey)
     upper.setRange(overlap.upSlice)
-    lower = SliceableImage.makeFromFITS(lowerKey, lowerPath, lowerWeightPath,
-            mask_path=lowerMaskKey)
+    lower = SliceableImage.makeFromFITS(
+        lowerKey, lowerPath, lowerWeightPath, mask_path=lowerMaskKey)
     lower.setRange(overlap.loSlice)
     goodPix = np.where((upper.weight > 0.) & (lower.weight > 0.))
     nPixels = len(goodPix[0])
@@ -629,7 +625,7 @@ def _computeDiff(arg):
         diff_pixels = upper.image[goodPix] - lower.image[goodPix]
         # Choose iters=None so clipping until convergence.
         clipped = sigma_clip(diff_pixels, sig=nsigma, iters=1,
-                varfunc=np.nanvar)
+                             varfunc=np.nanvar)
         median = np.nanmedian(clipped[~clipped.mask])
         sigma = np.nanstd(clipped[~clipped.mask])
         n_clipped_pixels = len(clipped[~clipped.mask])
@@ -640,16 +636,14 @@ def _computeDiff(arg):
                       "area": n_clipped_pixels,
                       "level": median,
                       "coverage_frac": cov_frac}
-        
+
         # Save the difference image, if possible
         if diffDir is not None:
             image = upper.image - lower.image
-            print "image median", np.median(image)
             bad_pix = np.where((upper.weight == 0.) | (lower.weight == 0.))
             image[bad_pix] = np.nan
             lower_lim = median - nsigma * sigma
             upper_lim = median + nsigma * sigma
-            print "lower_lim, upper_lim", lower_lim, upper_lim
             image[image < lower_lim] = np.nan
             image[image > upper_lim] = np.nan
             path = os.path.join(diffDir, "%s*%s.fits" % (upperKey, lowerKey))
@@ -679,7 +673,7 @@ class CoupledPlanes(object):
         # same, for the lower image.
         self.lowerOverlapTrans = {}
         self.overlapShape = {}  # (xsize, ysize) of the overlap area
-    
+
     def __getitem__(self, fieldname):
         """:return: a list of fields that are coupled to the same named field.
         """
@@ -687,7 +681,7 @@ class CoupledPlanes(object):
 
     def get_doc(self):
         """Makes a dictionary document for saving the couplings in MongoDB.
-        
+
         The field tuples are replaced with a single string key using '*'
         as the delimter.
         """
@@ -714,19 +708,19 @@ class CoupledPlanes(object):
             overlapShape["*".join(pair)] = shape
 
         doc = {"fields": self.fields,
-            "diffs": diffs,
-            "sigmas": sigmas,
-            "areas": areas,
-            "levels": levels,
-            "upper_trans": upperTrans,
-            "lower_trans": lowerTrans,
-            "shape": overlapShape}
+               "diffs": diffs,
+               "sigmas": sigmas,
+               "areas": areas,
+               "levels": levels,
+               "upper_trans": upperTrans,
+               "lower_trans": lowerTrans,
+               "shape": overlapShape}
         return doc
 
     @classmethod
     def load_doc(cls, doc):
         """Make a CoupledPlanes instance from a MongoDB document.
-        
+
         The mongoDB document simulates tuples of field pairs as a string with
         '*' as the delimeter.
         """
@@ -763,20 +757,20 @@ class CoupledPlanes(object):
             instance.overlapShape[fieldTuple] = subDoc
 
         return instance
-    
+
     def add_field(self, name, imagePath, weightPath):
         """Adds a field object, which is any object that responds to the field
         specification..."""
         self.fields[name] = {'image_path': imagePath,
-            'weight_path': weightPath}
-    
+                             'weight_path': weightPath}
+
     def make(self, diffDir, nThreads=None):
         """Compute coupled image differences, using `diffDir` as a working
         directory for the image differencing.
         """
         self._find_overlaps()
         self._compute_overlap_diffs(diffDir, nProcesses=nThreads)
-    
+
     def _find_overlaps(self):
         """Given the fields, detects and records all overlaps between fields.
         """
@@ -791,21 +785,22 @@ class CoupledPlanes(object):
         """
         resampledWCS = ResampledWCS(astropy.io.fits.getheader(imagePath, 0))
         return resampledWCS
-    
+
     def get_overlap_db(self):
         return self.overlapDB
-    
+
     def _compute_overlap_diffs(self, diffImageDir, nProcesses=None):
         """Compute the difference planes between fields in each overlap.
-        
+
         Done with multiprocessing, so that overlaps are computed in parallel.
-        
+
         :param diffImageDir: can be set to a directory name so that the
             computed difference images will be saved there.
         """
         if diffImageDir is not None:
-            if os.path.exists(diffImageDir) is False: os.makedirs(diffImageDir)
-        
+            if os.path.exists(diffImageDir) is False:
+                os.makedirs(diffImageDir)
+
         args = []
         for overlapKey, overlap in self.overlapDB.iteritems():
             field1, field2 = overlapKey
@@ -814,15 +809,15 @@ class CoupledPlanes(object):
             field2Path = self.fields[field2]['image_path']
             field2WeightPath = self.fields[field2]['weight_path']
             arg = (field1, field1Path, field1WeightPath, field2, field2Path,
-                    field2WeightPath, overlap, diffImageDir)
+                   field2WeightPath, overlap, diffImageDir)
             args.append(arg)
-        
+
         if nProcesses is None:
             nProcesses = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(processes=nProcesses)
         results = pool.map(_computeDiffPlane, args)
         # results = map(_computeDiffPlane, args)
-        
+
         self.diffPlanes = {}
         self.diffAreas = {}
         self.diffSigmas = {}
@@ -853,7 +848,7 @@ def _computeDiffPlane(arg):
     lower.setRange(overlap.loSlice)
     goodPix = np.where((upper.weight > 0.) & (lower.weight > 0.))
     nPixels = len(goodPix[0])
-    
+
     if nPixels > 10:
         # Iterate several times until convergence is reached; we're really
         # iterating to build a good description of what the good pixels are
@@ -881,23 +876,23 @@ def _computeDiffPlane(arg):
         yCoords = np.array(yCoords)
         xIndices = np.array(xIndices, dtype=int)
         yIndices = np.array(yIndices, dtype=int)
-        
+
         converged = False
         planeFit, newGoodPix = _fitPlane(diffImage, xCoords, yCoords,
-                xIndices, yIndices, goodPix)
+                                         xIndices, yIndices, goodPix)
         newGoodPix = _combineGoodPixMasks(diffImage.shape, goodPix, newGoodPix)
         nIter = 0
         while converged is False:
             newPlaneFit, newGoodPix = _fitPlane(diffImage, xCoords, yCoords,
-                xIndices, yIndices, newGoodPix)
-            
+                                                xIndices, yIndices, newGoodPix)
+
             # Need to combine newGoodPix, which is based purely on sigma clip
             # with the original goodPix. The surface brightness can often be
             # less than the difference flux. Thus, a sigma-clipped newGoodPix
             # will often include non-difference pixels
             newGoodPix = _combineGoodPixMasks(diffImage.shape, goodPix,
-                newGoodPix)
-            
+                                              newGoodPix)
+
             planePerDiff = (planeFit - newPlaneFit) / planeFit
             planePerDiffSq = np.sum(planePerDiff ** 2.)
             if planePerDiffSq < 1e-8:
@@ -908,32 +903,32 @@ def _computeDiffPlane(arg):
             if nIter > 10:
                 break
                 print "Iteration timeout"
-        
+
         print "Plane", planeFit
-        
+
         # Get metadata of the couplings
         area = len(goodPix[0])
         meanLevel = np.median((upper.image[newGoodPix]
-            + lower.image[newGoodPix]) / 2.)
+                               + lower.image[newGoodPix]) / 2.)
         # standard deviation of the diffence image to plane
         args = diffImage, xCoords, yCoords, xIndices, yIndices, newGoodPix
         sigma = np.sqrt(_planeObjFunc(planeFit, *args) ** 2.).std()
-        
+
         # The translation to go from the centre of the upper frame to
         # the centre of the overlap
         upperTrans = overlap.getUpperCentreTrans()
         lowerTrans = overlap.getLowerCentreTrans()
-        
+
         offsetData = {"plane": tuple(planeFit), "sigma": sigma, "area": area,
-            "level": meanLevel, "upper_trans": upperTrans,
-            "lower_trans": lowerTrans, "shape": (xsize, ysize)}
-        
+                      "level": meanLevel, "upper_trans": upperTrans,
+                      "lower_trans": lowerTrans, "shape": (xsize, ysize)}
+
         # Save the difference image
         outputImage = np.nan * np.zeros(diffImage.shape)
         outputImage[newGoodPix] = diffImage[newGoodPix]
         astropy.io.fits.writeto(os.path.join(diffDir,
-            "%s_%s.fits" % (upperKey, lowerKey)),
-            outputImage, clobber=True)
+                                "%s_%s.fits" % (upperKey, lowerKey)),
+                                outputImage, clobber=True)
     else:
         offsetData = None
     return upperKey, lowerKey, offsetData
@@ -944,7 +939,7 @@ def _fitPlane(diffImage, xCoords, yCoords, xIndices, yIndices, goodPix):
     args = diffImage, xCoords, yCoords, xIndices, yIndices, goodPix
     p0 = [0., 0., 0.]  # mx, my, offset
     p, success = scipy.optimize.leastsq(_planeObjFunc, p0, args=args)
-    
+
     # Build new mask from sigma clipping the difference of model to real image
     mx, my, c = p
     modelImage = np.zeros(diffImage.shape)
@@ -957,11 +952,11 @@ def _fitPlane(diffImage, xCoords, yCoords, xIndices, yIndices, goodPix):
 
 def _planeObjFunc(p, *args):
     realImage, xCoords, yCoords, xIndices, yIndices, goodPix = args
-    
+
     mx, my, c = p
     modelImage = np.zeros(realImage.shape)
     modelImage[yIndices, xIndices] = xCoords * mx + yCoords * my + c
-    
+
     delta = realImage - modelImage
     return np.ravel(delta[goodPix])
 
@@ -969,10 +964,10 @@ def _planeObjFunc(p, *args):
 def _combineGoodPixMasks(shape, goodPix, newGoodPix):
     goodImage = np.zeros(shape, dtype=int)
     goodImage[goodPix] = 1
-    
+
     newGoodImage = np.zeros(shape, dtype=int)
     newGoodImage[newGoodPix] = 1
-    
+
     # Pixels need to be good in *both* masks
     combinedImage = goodImage & newGoodImage
     combinedGoodPix = np.where(combinedImage == 1)
@@ -986,7 +981,7 @@ def histogramFit(pixels, initMean, initSigma):
     hist, bins = np.histogram(pixels, bins=nBins)
     binCentres = _makeBinMiddles(bins)
     fitSigma, fitPeak, fitMean = _fitBinnedGaussian(binCentres, hist, initMean,
-            initSigma)
+                                                    initSigma)
     fitSigma = np.sqrt(fitSigma ** 2.)
     return fitPeak, fitSigma, fitMean
 
@@ -997,7 +992,7 @@ def _makeBinMiddles(bins):
 
 
 unit_gauss = lambda x, mean, sigma: np.exp(-(mean - x) ** 2
-        / (2. * sigma ** 2.))
+                                           / (2. * sigma ** 2.))
 
 
 def _fitBinnedGaussian(bins, counts, initMean, initSigma):
@@ -1005,9 +1000,9 @@ def _fitBinnedGaussian(bins, counts, initMean, initSigma):
     original observations.
     """
     initialGuess = np.array([initSigma, counts.max(), initMean],
-            dtype=float)
+                            dtype=float)
     fit = scipy.optimize.fmin(_gaussianObjective, initialGuess,
-            args=(bins, counts))
+                              args=(bins, counts))
     return fit
 
 
@@ -1015,32 +1010,33 @@ def _gaussianObjective(fitParams, bins, counts):
     sigma = fitParams[0]
     peak = fitParams[1]
     mean = fitParams[2]
-    
+
     fittedCounts = peak * unit_gauss(bins, mean, sigma)
     diff = np.sum((fittedCounts - counts) ** 2.)
     return diff
 
 
 def _diffHist(pixels, mean, clippedMedian, sigma, upperKey, lowerKey,
-        plotPath):
+              plotPath):
     fig = Figure(figsize=(6, 6))
     canvas = FigureCanvas(fig)
     fig.subplots_adjust(left=0.15, bottom=0.13, wspace=0.25, hspace=0.25,
-        right=0.95)
+                        right=0.95)
     ax = fig.add_subplot(111)
     nPixels = len(pixels)
     # Plot histogram
     nCounts, bins, patches = ax.hist(pixels,
-        bins=int(nPixels / 1000), histtype='stepfilled', fc='0.5',
-        log=True, normed=True)
+                                     bins=int(nPixels / 1000),
+                                     histtype='stepfilled', fc='0.5',
+                                     log=True, normed=True)
     # Plot estimates of the image difference
     ax.axvline(mean, ls="-", c='k', label="mean")
     ax.axvline(clippedMedian, ls='--', c='k', label="clipped median")
     # ax.axvline(fittedMean, ls='--', c='r', label="fitted mean")
     ax.legend()
     ax.text(0.05, 0.95,
-        r"Clipped $\Delta= %.2e \pm %.2e$" % (clippedMedian, sigma),
-        ha="left", va="top", transform=ax.transAxes)
+            r"Clipped $\Delta= %.2e \pm %.2e$" % (clippedMedian, sigma),
+            ha="left", va="top", transform=ax.transAxes)
     ax.set_xlabel("Image Difference (counts)")
     upperKey = upperKey.replace("_", "\_")
     lowerKey = lowerKey.replace("_", "\_")
@@ -1051,12 +1047,12 @@ def _diffHist(pixels, mean, clippedMedian, sigma, upperKey, lowerKey,
 class CouplingGraph(object):
     """Allows for couplings to be treated as a directed graph, with trusted
     seeds and descendents.
-    
+
     An example use for this may be that one wants to build an inter-field sky
     offset solution using only a few fields in the core of the galaxy,
     where the S/N is highest. One would start with a seed as the central field,
     and follow the network until a desired number of fields are added.
-    
+
     This code has some similaries to the Couplings/PropagationSolutionNetwork
     classes in DCPropagator.py. The difference is that this class uses
     the `Couplings` object to simply record all overlaps. This class uses that
@@ -1066,25 +1062,25 @@ class CouplingGraph(object):
     def __init__(self):
         super(CouplingGraph, self).__init__()
         self.pastFieldSet = set([])
-    
+
     def setOverlaps(self, overlapDB):
         """Set a `OverlapDB` object that defines all overlaps between fields.
         """
         self.overlapDB = overlapDB
-    
+
     def setSeed(self, seedname):
         """Sets a single field as the seed."""
         self.seeds = [seedname]
         self.pastFieldSet = set(self.seeds)
-    
+
     def setSeeds(self, seednames):
         """Sets multiple fields as the trusted seed."""
         self.seeds = seednames
         self.pastFieldSet = set(self.seeds)
-    
+
     def __iter__(self):
         return self
-    
+
     def next(self):
         """Iterates through the network, starting from the seed, generation by
         generation.
