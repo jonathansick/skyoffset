@@ -47,8 +47,8 @@ class ChipStacker(object):
             self._swarp_configs = {}
 
     def pipeline(self, stack_name, image_keys, image_paths, weight_paths,
-            noise_paths=None, db_meta=None, convergence_tol=1e-4,
-            n_iter_max=4):
+                 noise_paths=None, db_meta=None, convergence_tol=1e-4,
+                 n_iter_max=4):
         """Pipeline for running the ChipStacker method to produce stacks
         and addd them to the stack DB.
 
@@ -76,18 +76,18 @@ class ChipStacker(object):
         im_paths = dict(zip(image_keys, image_paths))
         w_paths = dict(zip(image_keys, weight_paths))
         self._stack_images(image_keys, im_paths, w_paths, stack_name,
-                convergence_tol, n_iter_max)
+                           convergence_tol, n_iter_max)
         self._remove_offset_frames()
         self._renormalize_weight()
         if noise_paths:
             self._make_noisemap(image_keys, noise_paths,
-                [w_paths[ik] for ik in image_keys],
-                self._coadd_path)
+                                [w_paths[ik] for ik in image_keys],
+                                self._coadd_path)
         stack_doc = {"_id": stack_name,
-                "image_path": self._coadd_path,
-                "weight_path": self._coadd_weightpath,
-                "offsets": {ik: float(offset) for ik, offset
-                    in self.offsets.iteritems()}}
+                     "image_path": self._coadd_path,
+                     "weight_path": self._coadd_weightpath,
+                     "offsets": {ik: float(offset) for ik, offset
+                                 in self.offsets.iteritems()}}
         if self.noise_path:
             stack_doc.update({"noise_path": self.noise_path})
         if db_meta is not None:
@@ -95,11 +95,12 @@ class ChipStacker(object):
         self.stackdb.c.save(stack_doc)
 
         # Define the stack's footprint
-        self.stackdb.add_footprint_from_header(stack_name,
-                astropy.io.fits.getheader(self._coadd_path))
+        self.stackdb.add_footprint_from_header(
+            stack_name,
+            astropy.io.fits.getheader(self._coadd_path))
 
     def _stack_images(self, image_keys, image_paths, weight_paths, stack_name,
-            convergence_tol, n_iter_max):
+                      convergence_tol, n_iter_max):
         """Make a stack with the given list of images.
         :param image_keys: list of strings identifying the listed image paths.
         :param image_paths: dict of paths to single-extension FITS image files.
@@ -110,7 +111,7 @@ class ChipStacker(object):
         self.image_paths = image_paths
         self.weight_paths = weight_paths
         self.stack_name = stack_name
-        
+
         # Start with the original images
         self._current_offset_paths = dict(image_paths)
 
@@ -119,11 +120,11 @@ class ChipStacker(object):
         for image_key, image_path in self.image_paths.iteritems():
             header = astropy.io.fits.getheader(image_path)
             self.image_frames[image_key] = ResampledWCS(header)
-        
+
         # 1. Do initial coadd
         self._coadd_path, self._coadd_weightpath, self._coadd_frame \
-                = self._coadd_frames()
-        
+            = self._coadd_frames()
+
         # 2. Compute overlaps of frames to the coadded frame
         self.overlaps = {}
         for image_key in self.image_keys:
@@ -142,7 +143,7 @@ class ChipStacker(object):
 
             self._make_offset_images(prev_offsets)
             self._coadd_path, self._coadd_weightpath, self._coadd_frame \
-                    = self._coadd_frames()
+                = self._coadd_frames()
             self.overlaps = {}
             for imageKey in self.image_keys:
                 self.overlaps[imageKey] \
@@ -189,16 +190,16 @@ class ChipStacker(object):
         configs = dict(self._swarp_configs)
         configs.update({'RESAMPLE': 'N', 'SUBTRACT_BACK': 'N'})
         swarp = Swarp(imagePathList, self.stack_name,
-                weightPaths=weightPathList,
-                configs=configs, workDir=self.workdir)
+                      weightPaths=weightPathList,
+                      configs=configs, workDir=self.workdir)
         swarp.run()
         coaddPath, coaddWeightPath = swarp.mosaic_paths()
-        
+
         coaddHeader = astropy.io.fits.getheader(coaddPath, 0)
         coaddFrame = ResampledWCS(coaddHeader)
-        
+
         return coaddPath, coaddWeightPath, coaddFrame
-    
+
     def _compute_differences(self):
         """Computes the deviation of individual images to the level of the
         average.
@@ -209,7 +210,7 @@ class ChipStacker(object):
             framePath = self.image_paths[imageKey]
             frameWeightPath = self.weight_paths[imageKey]
             arg = (imageKey, framePath, frameWeightPath, "coadd",
-                    self._coadd_path, self._coadd_weightpath, overlap)
+                   self._coadd_path, self._coadd_weightpath, overlap)
             args.append(arg)
         pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
         results = pool.map(_compute_diff, args)
@@ -221,12 +222,12 @@ class ChipStacker(object):
             offsets[frame] = offsetData  # look at _compute_diff() for spec
         # Normalize offsets
         net_offset = np.mean([d['diffimage_mean']
-            for ik, d in offsets.iteritems()])
+                              for ik, d in offsets.iteritems()])
         for ik, offset in offsets.iteritems():
             offsets[ik]['diffimage_mean'] = offset['diffimage_mean'] \
                 - net_offset
         return offsets
-    
+
     def _estimate_offsets(self, diff_data):
         """Estimate offsets based on the simple difference of taht frame to
         the coadded surface intensity.
@@ -246,13 +247,13 @@ class ChipStacker(object):
             offsetDir = os.path.join(self.workdir, "offset_frames")
             if os.path.exists(offsetDir) is False:
                 os.makedirs(offsetDir)
-            
+
             args = []
             for imageKey in self.image_frames:
                 offset = offsets[imageKey]
                 origPath = self.image_paths[imageKey]
                 offsetPath = os.path.join(offsetDir,
-                        os.path.basename(origPath))
+                                          os.path.basename(origPath))
                 arg = (imageKey, origPath, offset, offsetPath)
                 args.append(arg)
             pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
@@ -264,20 +265,20 @@ class ChipStacker(object):
             pool.terminate()
 
     def _make_noisemap(self, image_keys, noise_paths, weight_paths,
-            mosaic_path):
+                       mosaic_path):
         """Make a noise map for this coadd given noisemaps of individual
         images.
         """
         factory = NoiseMapFactory(noise_paths, weight_paths, mosaic_path,
-                swarp_configs=dict(self._swarp_configs),
-                delete_temps=False)
+                                  swarp_configs=dict(self._swarp_configs),
+                                  delete_temps=False)
         self.noise_path = factory.map_path
 
 
 def _compute_diff(arg):
     """Worker: Computes the DC offset of frame-coadd"""
     upperKey, upperPath, upperWeightPath, lowerKey, lowerPath, \
-            lowerWeightPath, overlap = arg
+        lowerWeightPath, overlap = arg
     # print "diff between", upperKey, lowerKey
     upper = SliceableImage.makeFromFITS(upperKey, upperPath, upperWeightPath)
     upper.setRange(overlap.upSlice)
@@ -288,13 +289,10 @@ def _compute_diff(arg):
     if nPixels > 10:
         diff_pixels = upper.image[goodPix] - lower.image[goodPix]
         diff_pixels = diff_pixels[np.isfinite(diff_pixels)]
-        clipped = sigma_clip(diff_pixels, sig=3., iters=None,
-                varfunc=np.nanvar)
-        median = np.median(clipped[~clipped.mask])
+        clipped = sigma_clip(diff_pixels, sig=5., iters=1,
+                             varfunc=np.nanvar)
+        median = np.nanmedian(clipped[~clipped.mask])
         sigma = np.nanstd(clipped[~clipped.mask])
-        # diff_pixelsMean = diff_pixels.mean()
-        # diff_pixelsMean = np.median(diff_pixels)
-        # diff_pixelsSigma = diff_pixels.std()
         diffData = {"diffimage_mean": median,
                     "diffimage_sigma": sigma,
                     "area": nPixels}
