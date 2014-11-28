@@ -504,7 +504,7 @@ class Couplings(object):
             field2MaskPath = self.fields[field2]['mask_path']
             arg = (field1, field1Path, field1WeightPath, field1MaskPath,
                     field2, field2Path, field2WeightPath, field2MaskPath,
-                    overlap, diffImageDir, plotDir, 2.5)
+                    overlap, diffImageDir, plotDir, 5)
             args.append(arg)
         if mp:
             pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
@@ -628,9 +628,9 @@ def _computeDiff(arg):
         # Offset via difference image
         diff_pixels = upper.image[goodPix] - lower.image[goodPix]
         # Choose iters=None so clipping until convergence.
-        clipped = sigma_clip(diff_pixels, sig=nsigma, iters=None,
+        clipped = sigma_clip(diff_pixels, sig=nsigma, iters=1,
                 varfunc=np.nanvar)
-        median = np.median(clipped[~clipped.mask])
+        median = np.nanmedian(clipped[~clipped.mask])
         sigma = np.nanstd(clipped[~clipped.mask])
         n_clipped_pixels = len(clipped[~clipped.mask])
         cov_frac = float(n_clipped_pixels) / len(diff_pixels.ravel())
