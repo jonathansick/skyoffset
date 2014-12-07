@@ -7,6 +7,7 @@ noise maps.
 """
 
 import os
+import shutil
 
 import numpy as np
 import astropy.io.fits
@@ -15,7 +16,7 @@ import moastro.astromatic
 
 class MosaicResampler(object):
     """Resamples a set of mosaics to a common frame.
-    
+
     Parameters
     ----------
     workdir : str
@@ -28,6 +29,9 @@ class MosaicResampler(object):
     """
     def __init__(self, workdir, mosaicdb=None, target_fits=None):
         super(MosaicResampler, self).__init__()
+        self.MAX_NPIX_IN_MEMORY = 0.4e9  # max n pixel before using mmap
+        self.MEMMAP_CHUNK_SIZE = 1000  # number of rows to process in memmap
+
         self.mosaicdb = mosaicdb
 
         self._mosaic_docs = []
@@ -42,7 +46,7 @@ class MosaicResampler(object):
 
         The *first* mosaic added will establish the target frame. Thus it
         should be the image with the largest footprint.
-        
+
         Parameters
         ----------
         docs : :class:`pymongo.cursor.Cursor`
@@ -52,10 +56,11 @@ class MosaicResampler(object):
             self._mosaic_docs.append(doc)
 
     def add_images_by_path(self, image_paths, weight_paths=None,
-            noise_paths=None, flag_paths=None, offset_zp_sigmas=None):
+                           noise_paths=None, flag_paths=None,
+                           offset_zp_sigmas=None):
         """Rather than adding adding mosaics from a MosaicDB, directly add
         images from a list of paths.
-        
+
         Parameters
         ----------
         image_paths : list
@@ -74,7 +79,7 @@ class MosaicResampler(object):
         """
         for i, image_path in enumerate(image_paths):
             doc = {'image_path': image_path,
-                    '_id': os.path.splitext(os.path.basename(image_path))[0]}
+                   '_id': os.path.splitext(os.path.basename(image_path))[0]}
             if weight_paths:
                 doc['weight_path'] = weight_paths[i]
             if noise_paths:
@@ -85,13 +90,13 @@ class MosaicResampler(object):
                 doc['offset_zp_sigma'] = offset_zp_sigmas[i]
             header = astropy.io.fits.getheader(image_path, 0)
             pix_scale = np.sqrt(header['CD1_1'] ** 2.
-                    + header['CD1_2'] ** 2.) * 3600.
+                                + header['CD1_2'] ** 2.) * 3600.
             doc['pix_scale'] = pix_scale
             self._mosaic_docs.append(doc)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None):
         """Resample mosaics to the given pixel scale.
-        
+
         Mosaics will be identified in the MosaicDB with the ``set_name``.
 
         Parameters
@@ -138,10 +143,12 @@ class MosaicResampler(object):
             mosaic_ids.append(doc['_id'])
             if 'flag_path' in doc:
                 # set flagged pixels to nan before resampling
-                tmp_im_path = os.path.join(self.workdir,
-                        doc['_id'] + ".flagged.fits")
-                self._set_flagged_nans(doc['image_path'], doc['flag_path'],
-                        tmp_im_path)
+                tmp_im_path = os.path.join(
+                    self.workdir,
+                    doc['_id'] + ".flagged.fits")
+                self._set_flagged_nans(
+                    doc['image_path'], doc['flag_path'],
+                    tmp_im_path)
                 temp_image_paths.append(tmp_im_path)
                 image_paths.append(tmp_im_path)
             else:
@@ -174,7 +181,8 @@ class MosaicResampler(object):
             doc['pix_scale'] = pix_scale
             doc['native_pix_scale'] = orig_pix_scale
             if 'offsets' in doc:
-                doc['offsets'] = self._rescale_offsets(doc['offsets'],
+                doc['offsets'] = self._rescale_offsets(
+                    doc['offsets'],
                     orig_pix_scale, pix_scale)
             if 'offset_zp_sigma' in doc:
                 doc['offset_zp_sigma'] = self._rescale_offset_zp_sigma(
@@ -183,14 +191,16 @@ class MosaicResampler(object):
                 del doc['couplings']
             # Resample the noise frame now, if it exists
             if noise_paths[i] is not None:
-                resamp_noise_path = self._resample_noise(set_name,
+                resamp_noise_path = self._resample_noise(
+                    set_name,
                     swarp_configs, [resamp_path],
                     [resampled_weight_paths[i]],
                     [noise_paths[i]])[0]
                 doc['noise_path'] = resamp_noise_path
             if self.mosaicdb:
                 self.mosaicdb.c.save(doc)
-                self.mosaicdb.add_footprint_from_header(doc['_id'],
+                self.mosaicdb.add_footprint_from_header(
+                    doc['_id'],
                     astropy.io.fits.getheader(resamp_path, 0))
             else:
                 resamp_docs.append(doc)
@@ -205,15 +215,43 @@ class MosaicResampler(object):
     def _set_flagged_nans(self, image_path, flag_path, output_path):
         """Create a version of a FITS image where flagged pixel are set to NaN.
         """
-        f = astropy.io.fits.open(image_path)
-        flagfits = astropy.io.fits.open(flag_path)
-        f[0].data[flagfits[0].data > 0] = np.nan
-        f.writeto(output_path, clobber=True)
-        f.close()
-        flagfits.close()
+        assert output_path != image_path
+        nx = astropy.io.fits.getval(image_path, 'NAXIS1', 0)
+        ny = astropy.io.fits.getval(image_path, 'NAXIS2', 0)
+        npix = nx * ny
+        if npix > self.MAX_NPIX_IN_MEMORY:
+            print "Using mmemap to make flagged image", output_path
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            shutil.copy(image_path, output_path)
+            ffits = astropy.io.fits.open(flag_path, memmap=True)
+            ofits = astropy.io.fits.open(output_path, memmap=True,
+                                         mode='update')
+            ymin = 0
+            ymax = ymin + self.MEMMAP_CHUNK_SIZE
+            while ymax <= ny:
+                ofits[0].data[ymin:ymax, :][ffits[0].data[ymin:ymax, :] > 0] \
+                    = np.nan
+                ofits.flush()
+                # Update chunck range
+                ymin = ymax
+                ymax = ymin + self.MEMMAP_CHUNK_SIZE
+                if ymax > ny:
+                    ymax = ny
+                if ymin == ny:
+                    break
+            ffits.close()
+            ofits.close()
+        else:
+            f = astropy.io.fits.open(image_path)
+            flagfits = astropy.io.fits.open(flag_path)
+            f[0].data[flagfits[0].data > 0] = np.nan
+            f.writeto(output_path, clobber=True)
+            f.close()
+            flagfits.close()
 
     def _resample_images(self, set_name, swarp_configs, image_paths,
-            weight_paths):
+                         weight_paths):
         """Standard resampling of images."""
         rimage_paths = []
         rweight_paths = []
@@ -224,7 +262,8 @@ class MosaicResampler(object):
                 target_weight = [weight_paths[0]]
             else:
                 target_weight = None
-            swarp = moastro.astromatic.Swarp([image_paths[0]], set_name,
+            swarp = moastro.astromatic.Swarp(
+                [image_paths[0]], set_name,
                 weightPaths=target_weight,
                 configs=swarp_configs,
                 workDir=self.workdir)
@@ -244,7 +283,8 @@ class MosaicResampler(object):
         else:
             _w_paths = None
         if len(_im_paths) > 0:
-            swarp = moastro.astromatic.Swarp(_im_paths, set_name,
+            swarp = moastro.astromatic.Swarp(
+                _im_paths, set_name,
                 weightPaths=_w_paths,
                 configs=swarp_configs,
                 workDir=self.workdir)
@@ -361,7 +401,7 @@ class MosaicResampler(object):
         return scaled_offsets
 
     def _rescale_offset_zp_sigma(self, offset_zp_scale, orig_pixscale,
-            new_pixscale):
+                                 new_pixscale):
         """Scale the sky offset zp uncertainty according to astrometric
         scaling.
         """
@@ -369,7 +409,7 @@ class MosaicResampler(object):
         return offset_zp_scale * scale_factor
 
     def _resample_noise(self, set_name, swarp_configs, image_paths,
-            weight_paths, noise_paths):
+                        weight_paths, noise_paths):
         """Resampling of noise maps."""
         # First make variance images.
         var_paths = []
@@ -377,18 +417,16 @@ class MosaicResampler(object):
         for noise_path in noise_paths:
             var_path = os.path.basename(os.path.splitext(noise_path)[0]) \
                 + "_var.fits"
-            f = astropy.io.fits.open(noise_path)
-            f[0].data = f[0].data ** 2.
-            f.writeto(var_path, clobber=True)
-            f.close()
+            self._make_variance_map(noise_path, var_path)
             var_paths.append(var_path)
 
         # Need to swarp individually since we need to match the resampled imgs
         for image_path, weight_path, var_path in zip(image_paths, weight_paths,
-                var_paths):
+                                                     var_paths):
             print "var_path", var_path
             print "weight_path", weight_path
-            swarp = moastro.astromatic.Swarp([var_path], set_name,
+            swarp = moastro.astromatic.Swarp(
+                [var_path], set_name,
                 # weightPaths=[weight_path],
                 configs=swarp_configs,
                 workDir=self.workdir)
@@ -401,10 +439,8 @@ class MosaicResampler(object):
             print "resamp_varsum_wpath", resamp_varsum_wpath
             os.remove(resamp_varsum_wpath)
             # Convert variance to sigma map
-            fits = astropy.io.fits.open(resamp_varsum_path)
-            fits[0].data = np.sqrt(fits[0].data)
             rnoisepath = os.path.splitext(image_path)[0] + ".noise.fits"
-            fits.writeto(rnoisepath, clobber=True)
+            self._make_sigma_map(resamp_varsum_path, rnoisepath)
             resamp_noise_paths.append(rnoisepath)
 
         for p in var_paths:
@@ -412,3 +448,69 @@ class MosaicResampler(object):
 
         self._resize_resampled_images(self._target_fits, resamp_noise_paths)
         return resamp_noise_paths
+
+    def _make_variance_map(self, sigma_path, var_path):
+        nx = astropy.io.fits.getval(sigma_path, 'NAXIS1', 0)
+        ny = astropy.io.fits.getval(sigma_path, 'NAXIS2', 0)
+        npix = nx * ny
+        if npix > self.MAX_NPIX_IN_MEMORY:
+            print "Using memmap for variance map", var_path
+            if os.path.exists(var_path):
+                os.remove(var_path)
+            shutil.copy(sigma_path, var_path)
+            sigma_fits = astropy.io.fits.open(sigma_path, memmap=True)
+            var_fits = astropy.io.fits.open(var_path, memmap=True,
+                                            mode='update')
+            ymin = 0
+            ymax = ymin + self.MEMMAP_CHUNK_SIZE
+            while ymax <= ny:
+                var_fits[0].data[ymin:ymax, :] \
+                    = sigma_fits[0].data[ymin:ymax, :] ** 2.
+                var_fits.flush()
+                # Update chunck range
+                ymin = ymax
+                ymax = ymin + self.MEMMAP_CHUNK_SIZE
+                if ymax > ny:
+                    ymax = ny
+                if ymin == ny:
+                    break
+            sigma_fits.close()
+            var_fits.close()
+        else:
+            f = astropy.io.fits.open(sigma_path)
+            f[0].data = f[0].data ** 2.
+            f.writeto(var_path, clobber=True)
+            f.close()
+
+    def _make_sigma_map(self, var_path, sigma_path):
+        nx = astropy.io.fits.getval(var_path, 'NAXIS1', 0)
+        ny = astropy.io.fits.getval(var_path, 'NAXIS2', 0)
+        npix = nx * ny
+        if npix > self.MAX_NPIX_IN_MEMORY:
+            print "Using memmap for sigma map", sigma_path
+            if os.path.exists(sigma_path):
+                os.remove(sigma_path)
+            shutil.copy(var_path, sigma_path)
+            var_fits = astropy.io.fits.open(var_path, memmap=True)
+            sigma_fits = astropy.io.fits.open(sigma_path, memmap=True,
+                                              mode='update')
+            ymin = 0
+            ymax = ymin + self.MEMMAP_CHUNK_SIZE
+            while ymax <= ny:
+                sigma_fits[0].data[ymin:ymax, :] = np.sqrt(
+                    var_fits[0].data[ymin:ymax, :])
+                sigma_fits.flush()
+                # Update chunck range
+                ymin = ymax
+                ymax = ymin + self.MEMMAP_CHUNK_SIZE
+                if ymax > ny:
+                    ymax = ny
+                if ymin == ny:
+                    break
+            sigma_fits.close()
+            var_fits.close()
+        else:
+            f = astropy.io.fits.open(var_path)
+            f[0].data = np.sqrt(f[0].data)
+            f.writeto(sigma_path, clobber=True)
+            f.close()
