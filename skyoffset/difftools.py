@@ -4,7 +4,7 @@ import cPickle
 import numpy as np
 import scipy.stats
 import astropy.io.fits
-from astropy.stats.funcs import sigma_clip
+from astropy.stats import sigma_clip
 import Polygon
 import Polygon.Utils
 import multiprocessing
