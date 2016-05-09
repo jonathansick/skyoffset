@@ -99,7 +99,7 @@ class MosaicDB(ImageLog):
         except:
             pass
         # Make footprint polygon, cast to a list
-        raDecFootprintArray = wcs.calcFootprint()
+        raDecFootprintArray = wcs.calc_footprint()
         raDecFootprint = []
         for (ra, dec) in raDecFootprintArray:
             raDecFootprint.append([ra, dec])
