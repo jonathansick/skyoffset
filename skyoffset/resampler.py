@@ -94,7 +94,8 @@ class MosaicResampler(object):
             doc['pix_scale'] = pix_scale
             self._mosaic_docs.append(doc)
 
-    def resample(self, set_name, pix_scale=None, swarp_configs=None):
+    def resample(self, set_name, pix_scale=None, swarp_configs=None,
+                 path_key='image_path'):
         """Resample mosaics to the given pixel scale.
 
         Mosaics will be identified in the MosaicDB with the ``set_name``.
@@ -147,12 +148,12 @@ class MosaicResampler(object):
                     self.workdir,
                     doc['_id'] + ".flagged.fits")
                 self._set_flagged_nans(
-                    doc['image_path'], doc['flag_path'],
+                    doc[path_key], doc['flag_path'],
                     tmp_im_path)
                 temp_image_paths.append(tmp_im_path)
                 image_paths.append(tmp_im_path)
             else:
-                image_paths.append(doc['image_path'])
+                image_paths.append(doc[path_key])
             if weight_paths is not None and 'weight_path' in doc:
                 weight_paths.append(doc['weight_path'])
             else:
@@ -173,7 +174,7 @@ class MosaicResampler(object):
             doc = dict(base_doc)
             orig_pix_scale = base_doc['pix_scale']
             doc['_id'] = mosaic_name
-            doc['source_image_path'] = base_doc['image_path']
+            doc['source_image_path'] = base_doc[path_key]
             doc['image_path'] = resamp_path
             if weight_paths is not None:
                 doc['weight_path'] = resampled_weight_paths[i]
