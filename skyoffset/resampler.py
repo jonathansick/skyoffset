@@ -37,6 +37,14 @@ class MosaicResampler(object):
         self._mosaic_docs = []
         self._target_fits = target_fits
 
+        if self._target_fits is not None:
+            header = astropy.io.fits.getheader(target_fits, 0)
+            if 'CDELT2' in header:
+                self._target_pix_scale = header['CDELT2'] * 3600.  # arcsec
+            else:
+                self._target_pix_scale = np.sqrt(header['CD1_1'] ** 2. +
+                                                 header['CD1_2'] ** 2.) * 3600.
+
         self.workdir = workdir
         if not os.path.exists(self.workdir):
             os.makedirs(self.workdir)
@@ -89,8 +97,8 @@ class MosaicResampler(object):
             if offset_zp_sigmas:
                 doc['offset_zp_sigma'] = offset_zp_sigmas[i]
             header = astropy.io.fits.getheader(image_path, 0)
-            pix_scale = np.sqrt(header['CD1_1'] ** 2.
-                                + header['CD1_2'] ** 2.) * 3600.
+            pix_scale = np.sqrt(header['CD1_1'] ** 2. +
+                                header['CD1_2'] ** 2.) * 3600.
             doc['pix_scale'] = pix_scale
             self._mosaic_docs.append(doc)
 
@@ -126,8 +134,12 @@ class MosaicResampler(object):
             swarp_configs = {}
         swarp_configs['COMBINE'] = 'N'
         swarp_configs['RESAMPLE'] = 'Y'
-        swarp_configs['PIXEL_SCALE'] = "%.2f" % pix_scale
-        swarp_configs['PIXELSCALE_TYPE'] = 'MANUAL'
+        if pix_scale is not None:
+            print "pix_scale", pix_scale
+            swarp_configs['PIXEL_SCALE'] = "%.2f" % pix_scale
+            swarp_configs['PIXELSCALE_TYPE'] = 'MANUAL'
+        else:
+            pix_scale = self._target_pix_scale
         swarp_configs['RESAMPLE_DIR'] = self.workdir
         swarp_configs['SUBTRACT_BACK'] = 'N'
 
