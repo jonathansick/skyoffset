@@ -398,10 +398,11 @@ class MosaicResampler(object):
 
             if touched:
                 fits[0].data = image
-                fits[0].header.update('NAXIS1', image.shape[1])
-                fits[0].header.update('NAXIS2', image.shape[0])
-                fits[0].header.update('CRPIX1', rCRPIX1)
-                fits[0].header.update('CRPIX2', rCRPIX2)
+                print "image.shape", image.shape
+                fits[0].header.set('NAXIS1', image.shape[1])
+                fits[0].header.set('NAXIS2', image.shape[0])
+                fits[0].header.set('CRPIX1', rCRPIX1)
+                fits[0].header.set('CRPIX2', rCRPIX2)
                 fits.writeto(path, clobber=True)
             fits.close()
 
