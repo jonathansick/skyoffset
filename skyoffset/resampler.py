@@ -66,7 +66,7 @@ class MosaicResampler(object):
     def add_images_by_path(self, image_paths, weight_paths=None,
                            noise_paths=None, flag_paths=None,
                            offset_zp_sigmas=None, filter_names=None,
-                           instruments=None):
+                           instruments=None, zps=None):
         """Rather than adding adding mosaics from a MosaicDB, directly add
         images from a list of paths.
 
@@ -101,6 +101,8 @@ class MosaicResampler(object):
                 doc['FILTER'] = filter_names[i]
             if instruments is not None:
                 doc['instrument'] = instruments[i]
+            if zps is not None:
+                doc['zp'] = zps[i]
 
             header = astropy.io.fits.getheader(image_path, 0)
             if 'CDELT2' in header:
