@@ -65,7 +65,8 @@ class MosaicResampler(object):
 
     def add_images_by_path(self, image_paths, weight_paths=None,
                            noise_paths=None, flag_paths=None,
-                           offset_zp_sigmas=None):
+                           offset_zp_sigmas=None, filter_names=None,
+                           instruments=None):
         """Rather than adding adding mosaics from a MosaicDB, directly add
         images from a list of paths.
 
@@ -96,6 +97,11 @@ class MosaicResampler(object):
                 doc['flag_path'] = flag_paths[i]
             if offset_zp_sigmas:
                 doc['offset_zp_sigma'] = offset_zp_sigmas[i]
+            if filter_names is not None:
+                doc['FILTER'] = filter_names[i]
+            if instruments is not None:
+                doc['instrument'] = instruments[i]
+
             header = astropy.io.fits.getheader(image_path, 0)
             if 'CDELT2' in header:
                 pix_scale = header['CDELT2'] * 3600.  # arcsec
@@ -103,6 +109,7 @@ class MosaicResampler(object):
                 pix_scale = np.sqrt(header['CD1_1'] ** 2. +
                                     header['CD2_2'] ** 2.) * 3600.
             doc['pix_scale'] = pix_scale
+
             self._mosaic_docs.append(doc)
 
     def resample(self, set_name, pix_scale=None, swarp_configs=None,
