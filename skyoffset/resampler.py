@@ -43,7 +43,7 @@ class MosaicResampler(object):
                 self._target_pix_scale = header['CDELT2'] * 3600.  # arcsec
             else:
                 self._target_pix_scale = np.sqrt(header['CD1_1'] ** 2. +
-                                                 header['CD1_2'] ** 2.) * 3600.
+                                                 header['CD2_2'] ** 2.) * 3600.
 
         self.workdir = workdir
         if not os.path.exists(self.workdir):
@@ -97,8 +97,11 @@ class MosaicResampler(object):
             if offset_zp_sigmas:
                 doc['offset_zp_sigma'] = offset_zp_sigmas[i]
             header = astropy.io.fits.getheader(image_path, 0)
-            pix_scale = np.sqrt(header['CD1_1'] ** 2. +
-                                header['CD1_2'] ** 2.) * 3600.
+            if 'CDELT2' in header:
+                pix_scale = header['CDELT2'] * 3600.  # arcsec
+            else:
+                pix_scale = np.sqrt(header['CD1_1'] ** 2. +
+                                    header['CD2_2'] ** 2.) * 3600.
             doc['pix_scale'] = pix_scale
             self._mosaic_docs.append(doc)
 
